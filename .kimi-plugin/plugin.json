@@ -1,0 +1,32 @@
+{
+  "name": "project-memory",
+  "version": "0.1.0",
+  "description": "Durable project memory as markdown pages on disk: BM25F search, validated writes, no server.",
+  "author": {
+    "name": "Yehven Shcherbynskyi",
+    "email": "lionmause999@gmail.com"
+  },
+  "homepage": "https://github.com/Krowli/project-memory",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "retrieval",
+    "bm25",
+    "documentation",
+    "knowledge-base",
+    "context"
+  ],
+  "skills": "./skills/",
+  "skillInstructions": "Kimi Code tool mapping for the project-memory skill:\n\n- The skill calls two scripts through the shell. Use Kimi Code's `Bash` tool to run them; there is no MCP server and no other transport.\n- When the skill says to read a page in full, use `Read` on the path that search printed, not another search.\n- When a write is rejected, the script exits non-zero and prints a `FIX:` line naming the exact command to run. Follow that line; do not work around the rejection by writing the markdown file directly with `Write`.\n- The store is `.memory/` at the repository root, or `$PROJECT_MEMORY_DIR` when set.",
+  "interface": {
+    "displayName": "Project Memory",
+    "shortDescription": "Searchable project memory: why the code is the way it is",
+    "longDescription": "Keeps decisions, contracts and bug post-mortems as markdown pages in .memory/, searchable with BM25F ranking and no server. Reads before you explore an unfamiliar subsystem; writes after a non-obvious fix.",
+    "developerName": "Yehven Shcherbynskyi",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/Krowli/project-memory"
+  }
+}

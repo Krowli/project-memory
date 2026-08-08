@@ -1,0 +1,39 @@
+{
+  "name": "project-memory",
+  "version": "0.1.0",
+  "description": "Durable project memory as markdown pages on disk. Search past decisions before guessing; record what the code cannot tell the next agent.",
+  "author": {
+    "name": "Yehven Shcherbynskyi",
+    "email": "lionmause999@gmail.com",
+    "url": "https://github.com/Krowli"
+  },
+  "homepage": "https://github.com/Krowli/project-memory",
+  "repository": "https://github.com/Krowli/project-memory",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "retrieval",
+    "bm25",
+    "documentation",
+    "knowledge-base",
+    "context"
+  ],
+  "skills": "./skills/",
+  "hooks": {},
+  "interface": {
+    "displayName": "Project Memory",
+    "shortDescription": "Searchable project memory: why the code is the way it is",
+    "longDescription": "Keeps decisions, contracts and bug post-mortems as markdown pages in .memory/, searchable with BM25F ranking and no server. Reads before you explore an unfamiliar subsystem; writes after a non-obvious fix. Writes are validated rather than requested: a page with no sources, an unresolvable source path or a body too short to be worth keeping is rejected with the command to run instead.",
+    "developerName": "Yehven Shcherbynskyi",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Why is this part of the codebase built this way?",
+      "Remember why we made this decision."
+    ],
+    "websiteURL": "https://github.com/Krowli/project-memory"
+  }
+}

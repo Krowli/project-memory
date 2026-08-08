@@ -16,31 +16,61 @@ git satisfies all three.
 
 ## Install
 
-### Claude Code
+Each agent has its own plugin format, so this repository ships a manifest for
+each one. Use your agent's native command.
 
+**Claude Code**
 ```
 /plugin marketplace add Krowli/project-memory
 /plugin install project-memory@project-memory
 ```
 
-### Codex, Cursor, Gemini CLI, or any agent without a plugin system
+**Codex CLI** — run `/plugins`, find `project-memory`, choose Install.
 
-One command; drops the skill into `~/.agents/skills/`, the shared location that
-Codex, Cursor and Gemini CLI all read:
+**Cursor**
+```
+/add-plugin project-memory
+```
 
+**Gemini CLI**
+```bash
+gemini extensions install https://github.com/Krowli/project-memory
+```
+
+**Kimi Code**
+```
+/plugins install https://github.com/Krowli/project-memory
+```
+
+**Anything else** — one command, drops the skill into `~/.agents/skills/`:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Krowli/project-memory/main/install.sh | bash
 ```
 
 Per-project instead of per-user (commit it alongside the repo):
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Krowli/project-memory/main/install.sh | bash -s -- --project
 ```
 
-If your agent does not auto-discover skills, it only needs the scripts on disk
-plus a pointer. Append [`AGENTS.md`](AGENTS.md) from this repo to your project's
+An agent that does not auto-discover skills needs only the scripts on disk plus
+a pointer. Append [`AGENTS.md`](AGENTS.md) from this repo to your project's
 `AGENTS.md` — that file is the whole integration.
+
+### What is verified, and what is not
+
+The Claude Code path is checked in CI on every push: `claude plugin validate
+--strict` for the plugin manifests and the Agent Skills spec validator for
+`SKILL.md`. The Python that both paths run is tested on Ubuntu, macOS and
+Windows against Python 3.11 and 3.13.
+
+The Codex, Cursor, Gemini and Kimi manifests are modelled on a widely-installed
+skills repository's working manifests, and their shape is stable, but **no one
+has yet installed this skill in those agents and watched it run**. If you do,
+open an issue either way.
+
+OpenCode and Pi are not supported yet: they need an executable extension in
+JavaScript and TypeScript respectively, not just a manifest, and shipping code
+that has never been executed is worse than shipping nothing.
 
 ### Evaluating from a cold clone
 
