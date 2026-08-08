@@ -1,0 +1,13 @@
+{
+  "name": "project-memory",
+  "version": "0.1.0",
+  "description": "Durable project memory as markdown pages on disk, searchable without a server. Records decisions, contracts and bugs; retrieves them before the agent answers from guesswork.",
+  "author": {
+    "name": "Yehven Shcherbynskyi",
+    "email": "lionmause999@gmail.com"
+  },
+  "homepage": "https://github.com/Krowli/project-memory",
+  "repository": "https://github.com/Krowli/project-memory",
+  "license": "MIT",
+  "keywords": ["memory", "retrieval", "documentation", "knowledge-base", "context"]
+}
