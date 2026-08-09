@@ -71,6 +71,27 @@ def test_a_deliberately_tracked_store_is_left_alone(project):
     assert ".memory/" not in gitignore(project)
 
 
+def test_a_refused_write_still_shields_the_store_it_creates(project):
+    """The refusal is logged, and logging creates the store. If that path skips
+    the shielding, the very first thing a new project does — get something
+    refused — leaves an unprotected store behind, and the later successful write
+    sees a directory that already exists and leaves it alone."""
+    rc = memory_write.main([
+        "--store", str(project / ".memory"), "--slug", "too-thin", "--title", "T",
+        "--kind", "bug", "--source", "src/real.ts", "--body", "short"])
+    assert rc == 1
+    assert (project / ".memory").is_dir()
+    assert ".memory/" in gitignore(project)
+
+
+def test_a_search_against_a_missing_store_shields_it_too(project):
+    """Searching also logs, and a search usually happens before any write."""
+    import memory_search
+    memory_search.search("anything at all", project / ".memory")
+    if (project / ".memory").exists():
+        assert ".memory/" in gitignore(project)
+
+
 def test_a_store_that_already_existed_is_left_as_is(project):
     """Only creation triggers this. Someone who deleted the line meant it."""
     (project / ".memory").mkdir()

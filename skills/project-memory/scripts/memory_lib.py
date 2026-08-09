@@ -121,7 +121,12 @@ def log_event(store: Path, event: str, **fields) -> None:
     rather than relying on the store's own mode.
     """
     try:
-        store.mkdir(parents=True, exist_ok=True)
+        # Through ensure_store, not a bare mkdir: a refusal is logged, and a
+        # refusal is often the very first thing that happens in a new project.
+        # Creating the store here without shielding it would leave it exposed,
+        # and the later successful write would find a directory already there
+        # and leave it alone.
+        ensure_store(store)
         ignore = store / ".gitignore"
         if not ignore.exists():
             with ignore.open("w", encoding="utf-8") as fh:
