@@ -18,5 +18,6 @@
     "knowledge-base",
     "context"
   ],
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks-cursor.json"
 }

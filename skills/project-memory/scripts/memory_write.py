@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from memory_lib import find_store, log_event
+from memory_lib import ensure_store, find_store, log_event
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -72,7 +72,7 @@ def write_page(store: Path, slug: str, title: str, kind: str,
     if not SLUG_RE.match(slug):
         raise ValueError(
             f"invalid slug {slug!r}: lowercase letters, digits and single hyphens only")
-    store.mkdir(parents=True, exist_ok=True)
+    ensure_store(store)
     path = store / f"{slug}.md"
     today = _dt.date.today().isoformat()
 

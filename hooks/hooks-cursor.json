@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeContext": [
+      { "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/session_start.py\"" }
+    ]
+  }
+}

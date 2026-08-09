@@ -12,6 +12,9 @@ from pathlib import Path
 STORE_ENV = "PROJECT_MEMORY_DIR"
 STORE_DIRNAME = ".memory"
 LOG_NAME = ".log.jsonl"
+# Written by `install.sh --store tracked`: the pages here are meant to be
+# committed, so nothing should quietly add them to .gitignore behind the user.
+TRACKED_MARKER = ".tracked"
 
 
 def find_store(start: Path | None = None) -> Path:
@@ -75,6 +78,35 @@ def load_pages(store: Path) -> list[Page]:
     if not store.is_dir():
         return []
     return [parse_page(p) for p in sorted(store.rglob("*.md"))]
+
+
+def ensure_store(store: Path) -> None:
+    """Create the store if it is missing, and make a brand-new one private.
+
+    Installed globally, the skill meets projects it has never seen; the first
+    write in each of them creates a store. Shielding it at creation is the only
+    moment where nobody has to remember to do it — and the mistake it prevents
+    (notes pushed to a remote) cannot be undone afterwards.
+
+    Only creation triggers this. A store that already exists is left alone: if
+    the line was removed, that was a decision.
+    """
+    if store.exists():
+        return
+    store.mkdir(parents=True, exist_ok=True)
+    if (store / TRACKED_MARKER).exists():
+        return
+    try:
+        gitignore = store.parent / ".gitignore"
+        existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+        if any(line.strip().rstrip("/") == store.name for line in existing.splitlines()):
+            return
+        prefix = "" if (not existing or existing.endswith("\n")) else "\n"
+        with gitignore.open("a", encoding="utf-8") as fh:
+            fh.write(f"{prefix}\n# project-memory: notes stay local\n{store.name}/\n")
+    except OSError:
+        # A read-only checkout should not stop the write; the pages still land.
+        pass
 
 
 def log_event(store: Path, event: str, **fields) -> None:

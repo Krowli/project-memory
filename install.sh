@@ -5,6 +5,11 @@
 #   ./install.sh --project                    # skill into ./.agents/skills
 #   ./install.sh --dest ~/.claude/skills
 #   ./install.sh --store home                 # skip the storage question
+#   ./install.sh --no-hook                    # do not touch settings.json
+#
+# With no flags it installs once for every project (~/.agents/skills), which is
+# what you usually want: the skill is one program, the notes are per project and
+# appear on their own the first time an agent writes in a repository.
 #
 # Two separate things get placed, and they are not the same decision:
 #
@@ -28,6 +33,7 @@ DEST=""
 SCOPE="user"
 STORE_MODE="${PROJECT_MEMORY_STORE:-}"
 NO_STORE=0
+NO_HOOK=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,6 +41,7 @@ while [ $# -gt 0 ]; do
     --dest)     DEST="${2:?--dest needs a path}"; shift 2 ;;
     --store)    STORE_MODE="${2:?--store needs gitignored|tracked|home}"; shift 2 ;;
     --no-store) NO_STORE=1; shift ;;
+    --no-hook)  NO_HOOK=1; shift ;;
     -h|--help)  sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -59,6 +66,9 @@ git clone --depth 1 --branch "$REF" "$REPO" "$tmp/src" >/dev/null 2>&1
 mkdir -p "$DEST"
 rm -rf "${DEST:?}/$NAME"
 cp -R "$tmp/src/skills/$NAME" "$DEST/$NAME"
+# The hook travels with the skill: session_start.py resolves its sibling
+# scripts/ directory, so it works from wherever the skill was installed.
+cp -R "$tmp/src/hooks" "$DEST/$NAME/hooks"
 echo "skill:     $DEST/$NAME"
 
 # Claude Code reads .claude/skills; point it at the same directory rather than
@@ -83,7 +93,65 @@ python3 "$DEST/$NAME/scripts/memory_search.py" --help >/dev/null \
 # the files from the repository.
 rm -rf "$DEST/$NAME/scripts/__pycache__"
 
+# ── the session hook ─────────────────────────────────────────────────────────
+# Installed as a plugin, the agent picks up hooks/hooks.json by itself. Installed
+# this way there is no plugin system, so the hook is registered in settings.json
+# directly. Without it the skill is merely available; with it the agent is told
+# it has a memory before the first turn, which is the whole difference between
+# "remember to mention it" and it just working.
+if [ "$NO_HOOK" != "1" ]; then
+  if [ "$SCOPE" = "project" ]; then settings="$PWD/.claude/settings.json"; else settings="$HOME/.claude/settings.json"; fi
+  mkdir -p "$(dirname "$settings")"
+  HOOK_CMD="python3 \"$DEST/$NAME/hooks/session_start.py\"" \
+  SETTINGS="$settings" python3 - <<'PY'
+import json, os
+from pathlib import Path
+
+path = Path(os.environ["SETTINGS"])
+cmd = os.environ["HOOK_CMD"]
+data = {}
+if path.exists():
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+    except json.JSONDecodeError:
+        print("settings:  existing settings.json is not valid JSON — hook NOT added",
+              flush=True)
+        raise SystemExit(0)
+
+hooks = data.setdefault("hooks", {})
+entries = hooks.setdefault("SessionStart", [])
+# Idempotent: replace our own entry, never touch anyone else's.
+entries = [e for e in entries
+           if not any(h.get("_managed_id") == "project-memory-session-start"
+                      for h in e.get("hooks", []))]
+entries.append({
+    "matcher": "startup|clear|compact",
+    "hooks": [{"_managed_id": "project-memory-session-start",
+               "type": "command", "command": cmd}],
+})
+hooks["SessionStart"] = entries
+path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+print(f"hook:      registered in {path}")
+PY
+fi
+
 [ "$NO_STORE" = "1" ] && { echo; echo "Store not created (--no-store)."; exit 0; }
+
+# A global install is not standing in any particular project, and it will meet
+# many. Stores appear on their own at the first write and shield themselves as
+# they are created, so there is nothing useful to ask here.
+if [ "$SCOPE" = "user" ] && [ -z "$STORE_MODE" ]; then
+  cat <<'MSG'
+
+Installed for every project. A .memory/ store appears in a project the first
+time an agent writes there, and is added to that project's .gitignore as it is
+created — nothing to set up per project.
+
+To commit the notes in some project instead, run this there:
+  ./install.sh --project --store tracked
+MSG
+  exit 0
+fi
 
 # ── the store ────────────────────────────────────────────────────────────────
 # `curl … | bash` hands the script itself to stdin, so a prompt has to read the
@@ -130,6 +198,9 @@ case "$STORE_MODE" in
     echo "store:     $store  (private)" ;;
   tracked)
     mkdir -p "$store"
+    # Marker so the scripts never quietly add this store to .gitignore later.
+    printf 'These pages are committed on purpose. Do not gitignore this store.\n' \
+      > "$store/.tracked"
     echo "store:     $store  (committed with the repo — do not write secrets here)" ;;
   home)
     target="$HOME/.project-memory/$(basename "$project_root")"
