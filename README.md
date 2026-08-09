@@ -126,11 +126,30 @@ non-zero and prints a `FIX:` line naming the next command when a page has:
 The correction then lands inside the agent's own tool loop, where it acts on it,
 rather than in a document it may never read.
 
-### Where the store lives
+### Where the store lives, and who decides
 
-`$PROJECT_MEMORY_DIR` if set; otherwise the nearest `.memory/` directory walking
-up from the working directory. Commit `.memory/` to version the record with the
-code that motivated it.
+Installing places two separate things, and they are not the same decision. The
+**skill** is code: safe to commit, goes to `.agents/skills/`. The **store** is
+whatever you write into it, so `install.sh` asks before creating it:
+
+| mode | where | who can read it |
+|---|---|---|
+| `gitignored` *(default)* | `.memory/` in the project, added to `.gitignore` | only this machine |
+| `tracked` | `.memory/` in the project, committed | anyone with repo access |
+| `home` | `~/.project-memory/<project>/`, symlinked as `.memory/` | only this machine, and it cannot be committed by accident |
+
+Pass `--store <mode>` to skip the question. With no terminal to ask on — `curl |
+bash` in a pipeline, CI, a container — it takes `gitignored` rather than
+guessing, because the mistake it prevents is one-way: notes pushed to a remote
+cannot be unpublished.
+
+Choose `tracked` deliberately, when you want the record reviewed in pull
+requests and shared with the team, and you are confident nothing sensitive will
+land in it.
+
+At runtime the scripts resolve the store as `$PROJECT_MEMORY_DIR` if set,
+otherwise the nearest `.memory/` walking up from the working directory — so the
+`home` mode's symlink works with no extra configuration.
 
 ## Layout
 
