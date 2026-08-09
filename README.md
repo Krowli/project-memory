@@ -42,15 +42,30 @@ gemini extensions install https://github.com/Krowli/project-memory
 /plugins install https://github.com/Krowli/project-memory
 ```
 
-**Anything else** — one command, drops the skill into `~/.agents/skills/`:
+**Anything else** — one command, once, for every project you will ever open:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Krowli/project-memory/main/install.sh | bash
 ```
 
-Per-project instead of per-user (commit it alongside the repo):
-```bash
-curl -fsSL https://raw.githubusercontent.com/Krowli/project-memory/main/install.sh | bash -s -- --project
-```
+Run it from anywhere. It installs the skill to `~/.agents/skills/`, registers the
+session hook, and stops there — a store is not something to set up per project,
+it appears at the first write and shields itself as it is created.
+
+To install into one repository instead, and commit the skill with it, add
+`--project`. Add `--no-hook` to leave `settings.json` alone.
+
+### It does not need to be introduced
+
+A skill description is an invitation the model may decline; `hooks/` puts the
+instruction into the session before the first turn, on startup and again after a
+clear or compact. You never say "we have a memory, use it" — the agent already
+knows, and knows how many pages are in this project. About 1.3 KB of context,
+which is why it is a pointer and the full contract stays in `SKILL.md`.
+
+Installed as a plugin, the agent picks up `hooks/hooks.json` itself. Installed
+over `curl` there is no plugin system, so the installer writes the hook into
+`settings.json`, tagged `project-memory-session-start` so it can be found and
+removed.
 
 An agent that does not auto-discover skills needs only the scripts on disk plus
 a pointer. Append [`AGENTS.md`](AGENTS.md) from this repo to your project's
@@ -156,6 +171,10 @@ hole in the corpus or a hole in ranking.
 Installing places two separate things, and they are not the same decision. The
 **skill** is code: safe to commit, goes to `.agents/skills/`. The **store** is
 whatever you write into it, so `install.sh` asks before creating it:
+
+A store is created the first time an agent writes in a project, and is added to
+that project's `.gitignore` at that moment — the one point where nobody has to
+remember. `install.sh --project` can pick a different mode up front:
 
 | mode | where | who can read it |
 |---|---|---|
