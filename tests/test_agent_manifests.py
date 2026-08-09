@@ -64,3 +64,10 @@ def test_gemini_context_file_exists():
     """gemini-extension.json names a context file; a missing one loads nothing."""
     name = load("gemini-extension.json")["contextFileName"]
     assert (REPO / name).is_file(), f"{name} is declared but not in the repo"
+
+def test_skill_ships_a_gitignore_for_its_own_bytecode():
+    """Running the scripts leaves .pyc files next to them. Installed into someone
+    else's repo, those show up in their very first `git status`."""
+    ignore = REPO / "skills" / "project-memory" / ".gitignore"
+    assert ignore.is_file()
+    assert "__pycache__" in ignore.read_text()
