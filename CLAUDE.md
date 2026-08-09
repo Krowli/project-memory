@@ -24,7 +24,12 @@ write the page:
 
 ```bash
 python3 .agents/skills/project-memory/scripts/memory_write.py \
-  --slug short-kebab-slug --title "One line" --kind decision --source path/to/file
+  --slug short-kebab-slug --title "One line" --kind decision \
+  --source path/to/file --body -   <<'EOF'
+## Cause
+
+What a future agent could not reconstruct from the code...
+EOF
 ```
 
 The script validates and rejects: no sources, a source path that does not exist,

@@ -83,8 +83,17 @@ Green suite, no network, no fixtures beyond `tmp_path`. To try it for real:
 
 ```bash
 mkdir -p .memory
-python3 skills/project-memory/scripts/memory_write.py --slug hello --title "First page"
-python3 skills/project-memory/scripts/memory_search.py "first"
+python3 skills/project-memory/scripts/memory_write.py --slug hello \
+  --title "First page" --kind concept --source README.md --body -   <<'EOF'
+## Why this exists
+
+A page has to carry something the source file cannot tell you on its own — the
+reason behind a choice, the option that was rejected, the constraint that lives
+outside the repository. Anything shorter than two hundred characters is refused
+on the grounds that reading the code would have been faster, and this paragraph
+exists mainly to clear that bar honestly.
+EOF
+python3 skills/project-memory/scripts/memory_search.py "first page"
 ```
 
 ## Usage
@@ -95,11 +104,27 @@ Search before answering, write after meaningful work:
 memory_search.py "terminal freeze webgl context lost"     # ranked slug — title — snippet
 memory_write.py --slug webgl-context-loss \
   --title "xterm WebGL context loss on display sleep" \
-  --kind bug --source src/terminal/renderer.ts
+  --kind bug --source src/terminal/renderer.ts --body - < page.md
 ```
 
 Re-running `memory_write.py` with the same slug replaces same-header sections
 and appends new ones, so repeated calls are safe.
+
+### Writes are refused, not requested
+
+Asking an agent nicely, in a rules file, to keep a knowledge base tidy does not
+work — measured on a real corpus, it produced 104 auto-generated stubs averaging
+277 bytes that then occupied the top two result slots for real queries. So the
+check lives in the write path instead of in prose. `memory_write.py` exits
+non-zero and prints a `FIX:` line naming the next command when a page has:
+
+- no `--source`, or a `--source` path that does not exist on disk
+- a body under 200 characters
+- an unknown `--kind` (`decision`, `bug`, `concept`, `howto`) or a slug that is
+  not kebab-case
+
+The correction then lands inside the agent's own tool loop, where it acts on it,
+rather than in a document it may never read.
 
 ### Where the store lives
 

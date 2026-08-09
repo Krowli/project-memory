@@ -38,11 +38,32 @@ concept, or a contract change. Skip: typos, reverts, formatting, test-only edits
 ```bash
 python3 scripts/memory_write.py --slug webgl-context-loss \
   --title "xterm WebGL context loss on display sleep" \
-  --kind bug --source src/terminal/renderer.ts
+  --kind bug --source src/terminal/renderer.ts --body -  <<'EOF'
+## Cause
+
+The renderer keeps a WebGL context across display sleep. macOS drops the context
+on wake, and xterm.js does not re-request one, so the canvas stays blank while
+the buffer keeps updating underneath...
+EOF
 ```
 
-The script creates or section-merges the page and rebuilds the index. One topic
-per page. Cross-link related pages with `[[other-slug]]`.
+All five arguments are required. `--kind` is one of `decision`, `bug`,
+`concept`, `howto`. `--body -` reads the page from stdin.
+
+**The script refuses a page that is not worth keeping**, exits non-zero and
+prints a `FIX:` line naming the exact next command. Follow that line — do not
+route around it by writing the markdown file directly. Refusals:
+
+- no `--source`, or a `--source` path that does not exist on disk
+- a body under 200 characters — at that length a page is restating what reading
+  the source already shows
+- an unknown `--kind`, or a slug that is not kebab-case
+
+Write the thing a future agent could **not** reconstruct from the code: the
+cause behind the symptom, the alternative that was rejected and why, the
+constraint that lives outside the repository. Re-running the same slug
+section-merges rather than duplicating, so a second call is safe. One topic per
+page. Cross-link related pages with `[[other-slug]]`.
 
 See `references/page-format.md` for the frontmatter contract and
 `references/retrieval.md` for how ranking works and how to tune it.
