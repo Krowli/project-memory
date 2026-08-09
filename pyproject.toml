@@ -10,6 +10,13 @@ dependencies = []          # runtime is stdlib-only, on purpose
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
+# Nothing here is importable as a package: the scripts are run by path, and the
+# tests reach them through `pythonpath` below. Declaring that explicitly stops
+# setuptools auto-discovery, which otherwise sees hooks/, skills/ and tests/ as
+# competing top-level packages and refuses to build the project at all.
+[tool.setuptools]
+py-modules = []
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["skills/project-memory/scripts"]
