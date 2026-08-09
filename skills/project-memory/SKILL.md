@@ -65,5 +65,19 @@ constraint that lives outside the repository. Re-running the same slug
 section-merges rather than duplicating, so a second call is safe. One topic per
 page. Cross-link related pages with `[[other-slug]]`.
 
+## What the store records about itself
+
+Every write, refusal and query is appended to `.memory/.log.jsonl`, and the store
+keeps its own `.gitignore` so that file is never committed — it holds real
+queries. Read it back with:
+
+```bash
+python3 scripts/memory_stats.py            # or --since 2026-08-09, or --json
+```
+
+You do not need this during normal work. It exists so that "is this helping?"
+can be answered with the refusal rate, the codes it fired on, and the queries
+that returned nothing, rather than with an impression.
+
 See `references/page-format.md` for the frontmatter contract and
 `references/retrieval.md` for how ranking works and how to tune it.

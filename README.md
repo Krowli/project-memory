@@ -126,6 +126,31 @@ non-zero and prints a `FIX:` line naming the next command when a page has:
 The correction then lands inside the agent's own tool loop, where it acts on it,
 rather than in a document it may never read.
 
+### The store keeps a log, and something reads it
+
+Writes, refusals and queries are appended to `.memory/.log.jsonl`. The store
+carries its own `.gitignore` for that file, so it stays out of commits under
+every store mode — it holds every query anyone typed.
+
+```bash
+memory_stats.py --since 2026-08-09
+```
+```
+writes       23   (19 new, 4 merged, median 812 chars)
+refused       6   (21% of write attempts)
+                4  body_too_short
+                2  source_missing
+searches     87   (9% returned nothing)
+                miss: worktree detach race
+```
+
+This is deliberately a pair. Collecting refusals without a reader would repeat
+the exact failure the write gate exists to prevent: the system this replaced had
+a reconcile pass that counted source rot correctly for months into a structure
+with no consumer. A refusal rate concentrated on one code usually means the rule
+is wrong rather than the writer; queries that return nothing point at either a
+hole in the corpus or a hole in ranking.
+
 ### Where the store lives, and who decides
 
 Installing places two separate things, and they are not the same decision. The

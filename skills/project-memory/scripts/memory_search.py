@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from memory_lib import Page, find_store, load_pages
+from memory_lib import Page, find_store, load_pages, log_event
 
 # BM25F parameters. k1/b are the textbook values; a cross-validated sweep moved
 # nDCG@10 by 0.017, which does not justify carrying tuned constants. The title
@@ -139,13 +139,23 @@ def search(query: str, store: Path, k: int = 10) -> list[tuple[float, Page]]:
     terms = tokenize(query)
     if not terms:
         return []
+
     pages = load_pages(store)
-    if not pages:
-        return []
-    idx = build_index(pages)
-    hits = [(s, idx.pages[i]) for i in range(idx.n_docs) if (s := score_doc(terms, idx, i)) > 0]
-    hits.sort(key=lambda sp: (-sp[0], sp[1].slug))
-    return hits[:k]
+    hits: list[tuple[float, Page]] = []
+    if pages:
+        idx = build_index(pages)
+        hits = [(s, idx.pages[i]) for i in range(idx.n_docs)
+                if (s := score_doc(terms, idx, i)) > 0]
+        hits.sort(key=lambda sp: (-sp[0], sp[1].slug))
+        hits = hits[:k]
+
+    # Logged including the misses: a query that returns nothing is the strongest
+    # signal there is, both about the corpus and about ranking. This is the same
+    # telemetry that made it possible to benchmark ranking on real queries rather
+    # than invented ones.
+    log_event(store, "search", query=query, hits=len(hits),
+              top=hits[0][1].slug if hits else None)
+    return hits
 
 
 def snippet(page: Page, width: int = 100) -> str:

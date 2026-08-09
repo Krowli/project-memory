@@ -1,6 +1,9 @@
-"""Shared helpers: locating the store, parsing pages. Stdlib only."""
+"""Shared helpers: locating the store, parsing pages, recording what happened.
+Stdlib only."""
 from __future__ import annotations
 
+import datetime as _dt
+import json
 import os
 import re
 from dataclasses import dataclass, field
@@ -8,6 +11,7 @@ from pathlib import Path
 
 STORE_ENV = "PROJECT_MEMORY_DIR"
 STORE_DIRNAME = ".memory"
+LOG_NAME = ".log.jsonl"
 
 
 def find_store(start: Path | None = None) -> Path:
@@ -71,3 +75,29 @@ def load_pages(store: Path) -> list[Page]:
     if not store.is_dir():
         return []
     return [parse_page(p) for p in sorted(store.rglob("*.md"))]
+
+
+def log_event(store: Path, event: str, **fields) -> None:
+    """Append one JSON line to the store's log. Never raises.
+
+    Without this there is no way to answer how often the write gate fired and on
+    what, except from memory — and a check whose result nobody collects is
+    indistinguishable from no check. The log also captures the queries actually
+    asked, which is the only honest basis for re-tuning ranking later.
+
+    It holds real queries and slugs, so it is shielded from git inside the store
+    rather than relying on the store's own mode.
+    """
+    try:
+        store.mkdir(parents=True, exist_ok=True)
+        ignore = store / ".gitignore"
+        if not ignore.exists():
+            with ignore.open("w", encoding="utf-8") as fh:
+                fh.write(f"# holds every query and refusal; never commit it\n{LOG_NAME}\n")
+        record = {"ts": _dt.datetime.now().isoformat(timespec="seconds"),
+                  "event": event, **fields}
+        with (store / LOG_NAME).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        # Telemetry must never be the reason a write or a search fails.
+        pass

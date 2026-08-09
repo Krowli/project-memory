@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from memory_lib import find_store
+from memory_lib import find_store, log_event
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -95,10 +95,16 @@ def write_page(store: Path, slug: str, title: str, kind: str,
     return path
 
 
-def reject(reason: str, repair: str) -> int:
-    """Refuse the write. Never returns a path, never touches the store."""
+def reject(store: Path, code: str, reason: str, repair: str, slug: str = "") -> int:
+    """Refuse the write and record why. Never writes a page.
+
+    `code` is a short stable token rather than prose so refusals can be counted:
+    a gate that fires constantly on one code is either a real corpus problem or
+    a rule that needs loosening, and you cannot tell which from memory.
+    """
     print(f"REJECTED: {reason}", file=sys.stderr)
     print(f"FIX: {repair}", file=sys.stderr)
+    log_event(store, "reject", code=code, slug=slug, reason=reason)
     return 1
 
 
@@ -117,32 +123,39 @@ def validate(slug: str, kind: str, sources: list[str], body: str, store: Path) -
     """Return an exit code to refuse the write, or None to let it through."""
     if not SLUG_RE.match(slug):
         return reject(
+            store, "bad_slug",
             f"slug {slug!r} is not kebab-case (lowercase letters, digits, single hyphens)",
-            "retry with a slug like 'pty-hangs-on-exit'")
+            "retry with a slug like 'pty-hangs-on-exit'", slug)
 
     if kind not in KINDS:
         return reject(
+            store, "bad_kind",
             f"kind {kind!r} is not one of: {', '.join(KINDS)}",
-            "pick the closest kind and retry")
+            "pick the closest kind and retry", slug)
 
     if not sources:
         return reject(
+            store, "no_sources",
             "no --source given; a page with no anchor in the codebase goes stale invisibly",
-            f"retry with at least one: --source path/to/file (relative to {store.parent})")
+            f"retry with at least one: --source path/to/file (relative to {store.parent})",
+            slug)
 
     missing = [s for s in sources if resolve_source(s, store) is None]
     if missing:
         return reject(
+            store, "source_missing",
             f"these --source paths do not exist: {', '.join(missing)}",
             f"check the paths — they are resolved against {store.parent} and the "
-            "working directory — then retry")
+            "working directory — then retry", slug)
 
     if len(body.strip()) < MIN_BODY:
         return reject(
+            store, "body_too_short",
             f"body is {len(body.strip())} characters, minimum is {MIN_BODY} — a page this "
             "short restates what reading the source would already show",
             "write what a future agent could NOT reconstruct from the code (the cause "
-            "behind the symptom, the alternative that was rejected and why), then retry")
+            "behind the symptom, the alternative that was rejected and why), then retry",
+            slug)
 
     return None
 
@@ -167,19 +180,24 @@ def main(argv: list[str] | None = None) -> int:
         # There used to be a default body here reading "## Context / TODO: why
         # this matters." — a stub generator with a friendly face.
         return reject(
+            store, "no_body",
             "no --body given",
-            "pass --body with the text, or --body - to read it from stdin")
+            "pass --body with the text, or --body - to read it from stdin", args.slug)
 
     if args.kind is None:
         return reject(
+            store, "bad_kind",
             f"no --kind given; one of: {', '.join(KINDS)}",
-            "add --kind decision|bug|concept|howto and retry")
+            "add --kind decision|bug|concept|howto and retry", args.slug)
 
     refusal = validate(args.slug, args.kind, args.source, body, store)
     if refusal is not None:
         return refusal
 
+    existed = (store / f"{args.slug}.md").exists()
     path = write_page(store, args.slug, args.title, args.kind, args.source, body)
+    log_event(store, "write", slug=args.slug, kind=args.kind,
+              mode="merge" if existed else "create", chars=len(body.strip()))
     print(path)
     return 0
 
