@@ -66,6 +66,20 @@ def test_finds_the_store_from_a_subdirectory(tmp_path):
     assert "1 memory page(s)" in out["hookSpecificOutput"]["additionalContext"]
 
 
+def test_the_trigger_is_a_class_of_claim_not_a_list_of_phrasings(tmp_path):
+    """The first version fired on "why…" and "what did we decide…". Agents read
+    that as an exhaustive list: asked "what do you know about this project" they
+    answered from AGENTS.md and never searched — and AGENTS.md is precisely the
+    file that drifts. So the trigger names the kind of claim being made, and
+    says out loud that an instruction file already in context does not excuse
+    the search."""
+    _, out = run(tmp_path)
+    text = out["hookSpecificOutput"]["additionalContext"]
+    assert "what it does" in text
+    assert "AGENTS.md" in text
+    assert "not a reason to skip" in text
+
+
 def test_stays_small_enough_to_carry_every_turn(tmp_path):
     """This text is paid for on every turn of every session, so it must stay a
     pointer. The full contract belongs in SKILL.md, which loads on demand."""

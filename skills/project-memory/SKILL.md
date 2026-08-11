@@ -1,6 +1,6 @@
 ---
 name: project-memory
-description: Durable project memory as markdown pages on disk. Use when the user asks to remember a decision, record why something was built a certain way, look up prior context ("why did we...", "what did we decide about..."), or when starting work on an unfamiliar part of a codebase and past decisions would help. Also use after a non-trivial bugfix, refactor, or architectural decision to write the page.
+description: Durable project memory as markdown pages on disk. Use before answering any question whose answer describes this project — what it is, what it does, how a subsystem works, why it was built that way, what was decided or rejected ("why did we...", "what did we decide about...", "what do you know about this project") — and before starting work on an unfamiliar part of the codebase. Project instruction files (AGENTS.md, CLAUDE.md, README) already in context are not a substitute. Also use when the user asks to remember something, and after a non-trivial bugfix, refactor, or architectural decision, to write the page.
 license: MIT
 compatibility: Requires Python 3.11+. No network access and no API keys needed.
 metadata:
@@ -14,10 +14,11 @@ Markdown pages in `.memory/` are the durable record of decisions, contracts and
 bugs for this project. Plain files: greppable, diffable, reviewable in a PR, and
 readable by any agent or human without a server.
 
-## Read before you write code
+## Read before you answer, and before you write code
 
-Search before answering any "why", "what did we decide", or "how does X work"
-question, and before touching an unfamiliar subsystem:
+Search whenever your reply would state something about this project — what it
+is, what it does, how a subsystem works, why it looks that way, what was tried
+and rejected — and before touching an unfamiliar subsystem:
 
 ```bash
 python3 scripts/memory_search.py "terminal freeze webgl context lost"
@@ -26,6 +27,23 @@ python3 scripts/memory_search.py "terminal freeze webgl context lost"
 Prints ranked `slug — title — one-line snippet`. Read the full page with
 `cat .memory/<slug>.md` when a hit looks relevant. Two or three searches with
 different wording beats one long query.
+
+The trigger is the kind of claim you are about to make, not the wording of the
+question. "How does X work", "explain the architecture", "what does this app
+do" and "what do you know about this project" are all memory questions: the
+code shows what is there, the pages say what it is for and what it cost to get
+there.
+
+`AGENTS.md`, `CLAUDE.md` and `README.md` do not substitute for the search. They
+carry instructions rather than reasons, and they drift — a stale line in an
+instruction file reads exactly like a current one, while a memory page is dated
+and names the sources it was written against. Having such a file already in
+your context is the most common reason this search gets skipped; it is not a
+reason to skip it.
+
+Skip the search for mechanical work — running a command, a typo, a rename,
+reading a file the user named — and for general programming questions that are
+not about this codebase.
 
 If search returns nothing relevant, say so plainly rather than inventing an
 answer, then proceed from the code.

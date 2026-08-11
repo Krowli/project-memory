@@ -65,6 +65,17 @@ def test_gemini_context_file_exists():
     name = load("gemini-extension.json")["contextFileName"]
     assert (REPO / name).is_file(), f"{name} is declared but not in the repo"
 
+@pytest.mark.parametrize("rel", ["AGENTS.md", "CLAUDE.md", "GEMINI.md"])
+def test_context_files_carry_the_broad_search_trigger(rel):
+    """Three files say the same thing to three different agents, so they drift
+    apart one edit at a time. Each has to carry the trigger in its wide form —
+    search before any claim about the project — and the warning that the file
+    you are reading is not itself a substitute for the search."""
+    text = (REPO / rel).read_text(encoding="utf-8")
+    assert "Before stating anything about this project" in text
+    assert "not a substitute" in text
+
+
 def test_skill_ships_a_gitignore_for_its_own_bytecode():
     """Running the scripts leaves .pyc files next to them. Installed into someone
     else's repo, those show up in their very first `git status`."""

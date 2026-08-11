@@ -38,6 +38,17 @@ def test_description_within_spec_limit():
     assert 0 < len(desc) <= 1024
 
 
+def test_description_covers_plain_questions_about_the_project():
+    """The model decides whether to load this skill from the description alone.
+    While it only listed "why did we…" phrasings, a plain "what does this app
+    do" never reached the skill at all."""
+    fm = _frontmatter()
+    desc = next(ln.split(":", 1)[1].strip()
+                for ln in fm.splitlines() if ln.startswith("description:"))
+    assert "what it does" in desc
+    assert "not a substitute" in desc
+
+
 def test_frontmatter_uses_only_portable_spec_fields():
     """Fields outside the Agent Skills spec break claude.ai upload and packaging."""
     allowed = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
