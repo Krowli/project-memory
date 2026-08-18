@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import conftest
 import memory_search
 import memory_write
 import pytest
@@ -39,6 +40,7 @@ def test_a_broken_symlink_inside_the_store_is_skipped(stocked):
     assert slugs(stocked) == ["real"]
 
 
+@conftest.needs_posix
 def test_a_fifo_named_like_a_page_does_not_hang_the_search(stocked):
     """Opening a FIFO for reading blocks until someone writes to it. This did not
     fail the search, it hung it forever, with no timeout anywhere.
@@ -57,9 +59,8 @@ def test_a_fifo_named_like_a_page_does_not_hang_the_search(stocked):
     assert [hit["slug"] for hit in json.loads(proc.stdout)["hits"]] == ["real"]
 
 
+@conftest.needs_posix
 def test_an_unreadable_page_does_not_end_the_search(stocked):
-    if os.geteuid() == 0:
-        pytest.skip("root reads everything")
     blocked = stocked / "blocked.md"
     blocked.write_text("---\nslug: blocked\n---\n\nwebgl context loss\n", encoding="utf-8")
     blocked.chmod(0o000)
@@ -82,10 +83,9 @@ def test_a_symlink_inside_the_store_is_still_a_page(stocked):
     assert "real" in slugs(stocked)
 
 
+@conftest.needs_posix
 def test_a_read_only_store_is_refused_not_crashed(tmp_path):
     """The agent has to be able to tell 'this page is bad' from 'this disk is'."""
-    if os.geteuid() == 0:
-        pytest.skip("root writes everywhere")
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "real.ts").write_text("export {}")
     store = tmp_path / ".memory"

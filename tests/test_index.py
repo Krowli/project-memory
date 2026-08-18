@@ -11,6 +11,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import conftest
 import memory_index
 import memory_search
 import memory_write
@@ -180,10 +181,9 @@ def test_a_bumped_tokenizer_version_rebuilds(stocked, monkeypatch):
     assert path.stat().st_mtime_ns != stamp_before
 
 
+@conftest.needs_posix
 def test_a_read_only_store_is_still_searchable(stocked):
     """A search must never need to write the store it is reading."""
-    if os.geteuid() == 0:
-        pytest.skip("root writes everywhere")
     slugs(stocked)
     stocked.chmod(0o500)
     try:
@@ -192,12 +192,11 @@ def test_a_read_only_store_is_still_searchable(stocked):
         stocked.chmod(0o700)
 
 
+@conftest.needs_posix
 def test_a_read_only_store_with_no_index_yet_still_answers(stocked):
     """The harder half: nothing cached, and the builder cannot even create its lock.
     That must degrade to reading the markdown, not report 'someone else is
     building' and answer with nothing."""
-    if os.geteuid() == 0:
-        pytest.skip("root writes everywhere")
     memory_index.forget(stocked)
     stocked.chmod(0o500)
     try:
