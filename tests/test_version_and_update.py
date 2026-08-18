@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import conftest
 import memory_lib
 import pytest
 
@@ -43,6 +44,10 @@ def test_the_session_hook_says_which_version_is_installed(tmp_path):
     assert f"project-memory {memory_lib.VERSION}" in context
 
 
+# install.sh is a POSIX shell installer and is not a Windows entry point — there
+# `bash` resolves to the WSL stub, which answers in UTF-16 and installs nothing.
+# Windows users install through the plugin marketplace instead.
+@conftest.needs_posix
 def test_the_installer_help_shows_the_whole_header():
     """`--help` prints a fixed line range of this file's own comment block. Adding
     a line to the header silently truncated it before, hiding two store modes."""
@@ -57,6 +62,7 @@ def test_the_installer_help_shows_the_whole_header():
     assert header[-1] in shown, "the last header line is not printed by --help"
 
 
+@conftest.needs_posix
 def test_the_installer_reports_what_is_installed_and_what_is_newer(tmp_path):
     proc = subprocess.run(["bash", str(INSTALL), "--check", "--dest", str(tmp_path)],
                           capture_output=True, text=True,
