@@ -1,6 +1,6 @@
 {
   "name": "project-memory",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Durable project memory as markdown pages on disk. Search past decisions before guessing; record what the code cannot tell the next agent.",
   "author": {
     "name": "Yehven Shcherbynskyi",

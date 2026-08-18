@@ -6,6 +6,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-18
+
+### Fixed
+
+- **Contended writes terminated a sibling writer on Windows.** The lock decides
+  staleness by asking whether the owning process still exists, and used
+  `os.kill(pid, 0)` to ask. That is a liveness probe on POSIX and a kill on
+  Windows, where every signal but CTRL_C and CTRL_BREAK is delivered by calling
+  TerminateProcess. CI caught it as a hung test run, which was the mild version of
+  the symptom. Liveness now goes through a platform check — `OpenProcess` on
+  Windows, distinguishing "no such process" from "access denied" — and falls back
+  to the mtime rule wherever the answer is unknowable. A test pins `os.kill` to
+  that one guarded probe.
+- The host identity in a lock file came from `os.uname()`, which does not exist on
+  Windows, so every lock there was written and compared as `unknown-host`.
+
 ## [0.2.0] - 2026-08-18
 
 An audit of the skill against its own claims. Four ways a re-run could destroy
