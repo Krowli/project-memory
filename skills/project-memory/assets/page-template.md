@@ -1,7 +1,7 @@
 ---
 slug: SLUG
 title: "TITLE"
-kind: note
+kind: decision
 sources:
   - path/to/file
 ---

@@ -1,0 +1,2 @@
+# holds every query and refusal; never commit it
+.log.jsonl

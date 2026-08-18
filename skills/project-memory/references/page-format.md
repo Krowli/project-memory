@@ -1,18 +1,32 @@
 # Page format
 
-One file per topic at `.memory/<slug>.md`. Frontmatter is YAML-ish and parsed
-leniently — treat these as the contract:
+One file per topic at `.memory/<slug>.md`, written by `memory_write.py`. Do not
+write these files by hand: the script validates them, and hand-edited
+frontmatter is the one input the parser cannot round-trip. A `PreToolUse` hook
+denies a direct Write or Edit to a page and names the command instead.
+
+Frontmatter is YAML-ish and parsed leniently. This is the contract:
 
 | Field | Required | Notes |
 |---|---|---|
 | `slug` | yes | lowercase, digits, single hyphens; matches the filename |
 | `title` | yes | one line, quoted |
-| `kind` | no | `decision`, `concept`, `bug`, `note` (default `note`) — a hint, not a taxonomy |
+| `kind` | yes | exactly one of `decision`, `bug`, `concept`, `howto` |
 | `created` / `updated` | auto | ISO dates, managed by `memory_write.py` |
-| `sources` | no | file paths this page explains |
+| `sources` | yes | file paths this page explains; each must exist at write time |
+| `supersedes` | no | slugs this page replaces (`--supersedes`) |
+| `status` / `superseded_by` | auto | stamped on the page that was replaced |
+
+`kind` is a hint rather than a taxonomy, but it is a closed set: the corpus this
+was designed against grew a machine-generated fifth kind to 23% of all pages and
+none of it was worth reading.
 
 `sources` is accepted both inline (`sources: [a.ts, b.ts]`, written by older
-pages) and as a block list. The parser handles both; always emit the block form.
+pages) and as a block list. The parser handles both; the writer always emits the
+block form. A single unquoted value is read as a one-item list.
+
+Any field the tooling does not own is **preserved verbatim** across writes, so
+the format can be extended without a migration.
 
 ```markdown
 ---
@@ -20,7 +34,7 @@ slug: webgl-context-loss
 title: "xterm WebGL context loss on display sleep"
 kind: bug
 created: 2026-08-08
-updated: 2026-08-08
+updated: 2026-08-17
 sources:
   - src/terminal/renderer.ts
 ---
@@ -39,4 +53,15 @@ Listen for the event and re-attach the addon. See [[terminal-renderer-choice]].
 
 Write the body for someone who has forgotten the incident: what was observed,
 why it happened, what was decided, and what would make you revisit it. One topic
-per page — if a page needs "and also", split it. Link with `[[slug]]`.
+per page — if a page needs "and also", split it. Cross-reference with
+`[[slug]]`, which is the page's filename without the extension, so following one
+is a single read.
+
+Re-running the same slug replaces same-header sections in place and appends new
+ones; the command prints what it replaced. Sections are matched on `## ` lines
+outside code fences, so a page may quote markdown safely.
+
+When a decision reverses an earlier one, record the new page with
+`--supersedes <old-slug>`. That stamps the old page as superseded, demotes it in
+ranking, and marks it in every result line — the alternative is two pages that
+both read as current.
