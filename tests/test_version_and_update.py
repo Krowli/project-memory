@@ -6,6 +6,7 @@ tip of `main`, so two people running the same command on the same day could get
 different code and neither could say which.
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -66,8 +67,8 @@ def test_the_installer_help_shows_the_whole_header():
 def test_the_installer_reports_what_is_installed_and_what_is_newer(tmp_path):
     proc = subprocess.run(["bash", str(INSTALL), "--check", "--dest", str(tmp_path)],
                           capture_output=True, text=True,
-                          env={"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-                               "HOME": str(tmp_path), "PROJECT_MEMORY_REPO": str(REPO)})
+                          env={**os.environ, "HOME": str(tmp_path),
+                               "PROJECT_MEMORY_REPO": str(REPO)})
     assert proc.returncode == 0, proc.stderr
     assert "installed:" in proc.stdout
     assert "latest:" in proc.stdout
@@ -80,3 +81,44 @@ def test_the_installer_prefers_a_released_tag_over_the_branch():
     assert 'REF="${PROJECT_MEMORY_REF:-}"' in source, "REF still defaults to a branch"
     assert re.search(r"latest_tag\(\)\s*\{", source), "no tag resolution in the installer"
     assert 'REF="$(latest_tag)"' in source
+
+
+@conftest.needs_posix
+def test_the_command_written_into_settings_actually_runs(tmp_path):
+    """The hole that let a Windows bug ship: every hook test invoked
+    `sys.executable`, never the string the installer writes. `python3` is not a
+    command name Windows has — the installer puts `python`, `py` and `pymanager`
+    on PATH — so a hook registered as `python3 ...` silently never ran there, and
+    nothing in the suite would have noticed."""
+    home = tmp_path / "home"
+    home.mkdir()
+    proc = subprocess.run(
+        ["bash", str(INSTALL), "--no-store", "--dest", str(tmp_path / "skills")],
+        capture_output=True, text=True,
+        env={**os.environ, "HOME": str(home), "PROJECT_MEMORY_REPO": str(REPO),
+             "PROJECT_MEMORY_REF": "main"})
+    assert proc.returncode == 0, proc.stderr
+
+    settings = json.loads((home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    commands = [h["command"] for entries in settings["hooks"].values()
+                for entry in entries for h in entry["hooks"]]
+    assert len(commands) == 2, commands
+
+    for command in commands:
+        run = subprocess.run(command, shell=True, capture_output=True, text=True,
+                             input="{}", cwd=tmp_path)
+        assert run.returncode == 0, f"{command} -> {run.stderr}"
+        json.loads(run.stdout)  # both hooks must answer with parseable JSON
+
+
+def test_the_plugin_path_documents_its_fixed_interpreter():
+    """`hooks/hooks.json` cannot branch per platform, so it hard-codes one command
+    name. That is a real limitation on Windows and belongs in the README rather
+    than in a surprise."""
+    config = json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    commands = [h["command"] for entries in config["hooks"].values()
+                for entry in entries for h in entry["hooks"]]
+    assert all(c.startswith("python3 ") for c in commands), commands
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert "python3" in readme and "Windows" in readme
+    assert "--interpreter" in readme

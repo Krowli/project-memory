@@ -6,6 +6,26 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The hooks were registered as `python3`, which is not a command Windows has.**
+  Its installer puts `python`, `py` and `pymanager` on PATH; `python3` exists only
+  as an optional versioned alias. So on Windows both hooks silently never ran —
+  the agent was never told it had a memory, and the write guard blocked nothing,
+  which is precisely the hole it exists to close. `install.sh` now resolves a
+  working interpreter (`python3`, then `python`, then `py -3`, each checked for
+  3.11+) and writes that one into `settings.json`; `--interpreter` forces a
+  choice. It also no longer accepts a Python below 3.11, which the old existence
+  check did — on macOS that is `/usr/bin/python3`, still 3.9.
+- **The suite could not have caught it.** Every hook test invoked `sys.executable`
+  and never the string the installer writes, and `actions/setup-python` puts a
+  `python3` shim on Windows runners, so both layers hid it. A test now takes the
+  command out of the generated `settings.json` and runs it through a shell.
+- `hooks/hooks.json` cannot branch per platform, so the plugin path still
+  hard-codes `python3`. That limitation is now in the README rather than in a
+  surprise, with a test that keeps the two in sync.
+
+
 ## [0.2.1] - 2026-08-18
 
 ### Fixed

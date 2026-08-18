@@ -94,6 +94,14 @@ over `curl` there is no plugin system, so the installer writes both hooks into
 `settings.json`, tagged `project-memory-session-start` and
 `project-memory-write-guard` so they can be found and removed.
 
+**On Windows, mind the interpreter name.** `python3` is not a command Windows has:
+the installer puts `python`, `py` and `pymanager` on PATH. `install.sh` resolves a
+working interpreter and writes that one into `settings.json`, so the `curl` path is
+fine — use `--interpreter py` to force a particular one. A plugin manifest cannot
+branch per platform, so `hooks/hooks.json` hard-codes `python3`; installed as a
+plugin on Windows, both hooks silently do nothing unless `python3` resolves. The
+scripts themselves are unaffected and the CI matrix covers Windows.
+
 An agent that does not auto-discover skills needs only the scripts on disk plus
 a pointer. Append [`AGENTS.md`](AGENTS.md) from this repo to your project's
 `AGENTS.md` — that file is the whole integration.

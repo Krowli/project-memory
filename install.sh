@@ -8,6 +8,7 @@
 #   ./install.sh --no-hook                    # do not touch settings.json
 #   ./install.sh --no-store                   # install the skill and nothing else
 #   ./install.sh --check                      # what is installed, and is there anything newer
+#   ./install.sh --interpreter py             # force the command the hooks are run with
 #
 # By default this installs the latest released tag, not the tip of main, so an
 # install is reproducible and a version number means something. Set
@@ -41,6 +42,7 @@ STORE_MODE="${PROJECT_MEMORY_STORE:-}"
 NO_STORE=0
 NO_HOOK=0
 CHECK=0
+PYTHON="${PROJECT_MEMORY_PYTHON:-}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,7 +52,8 @@ while [ $# -gt 0 ]; do
     --no-store) NO_STORE=1; shift ;;
     --no-hook)  NO_HOOK=1; shift ;;
     --check)    CHECK=1; shift ;;
-    -h|--help)  sed -n '2,32p' "$0"; exit 0 ;;
+    --interpreter) PYTHON="${2:?--interpreter needs a command}"; shift 2 ;;
+    -h|--help)  sed -n '2,33p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -65,14 +68,31 @@ if [ -z "$DEST" ]; then
 fi
 
 command -v git >/dev/null || { echo "git is required" >&2; exit 1; }
-command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
+
+# `python3` is not a command name you can count on. On Windows the installer puts
+# `python`, `py` and `pymanager` on PATH and no `python3` at all — so a hook
+# registered as `python3 ...` silently never runs there, which means the agent is
+# never told it has a memory and the write guard blocks nothing. Resolve it once,
+# here, and write whatever actually works into settings.json.
+if [ -z "$PYTHON" ]; then
+  for candidate in python3 python "py -3"; do
+    # shellcheck disable=SC2086
+    if $candidate -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' \
+         >/dev/null 2>&1; then
+      PYTHON="$candidate"
+      break
+    fi
+  done
+fi
+[ -n "$PYTHON" ] || { echo "no Python 3.11+ found (tried python3, python, py -3)" >&2; exit 1; }
 
 # The latest released tag, or empty if the repository has never been tagged. A
 # `curl | bash` install used to take the tip of main, so two people running the
 # same command on the same day could get different code and neither could say
 # which version they had.
 latest_tag() {
-  git ls-remote --tags --refs "$REPO" 2>/dev/null | python3 -c '
+  # shellcheck disable=SC2086
+  git ls-remote --tags --refs "$REPO" 2>/dev/null | $PYTHON -c '
 import re, sys
 tags = [m.group(1) for line in sys.stdin
         if (m := re.search(r"refs/tags/(v\d+\.\d+\.\d+)$", line.strip()))]
@@ -135,8 +155,9 @@ elif [ "$SCOPE" = "project" ]; then
   }
 fi
 
-python3 "$DEST/$NAME/scripts/memory_search.py" --help >/dev/null \
-  && echo "verified:  scripts run under $(python3 --version)"
+# shellcheck disable=SC2086
+$PYTHON "$DEST/$NAME/scripts/memory_search.py" --help >/dev/null \
+  && echo "verified:  scripts run under $($PYTHON --version) via \`$PYTHON\`"
 # The verification run leaves bytecode behind; drop it so the install is exactly
 # the files from the repository.
 rm -rf "$DEST/$NAME/scripts/__pycache__"
@@ -155,9 +176,9 @@ rm -rf "$DEST/$NAME/scripts/__pycache__"
 if [ "$NO_HOOK" != "1" ]; then
   if [ "$SCOPE" = "project" ]; then settings="$PWD/.claude/settings.json"; else settings="$HOME/.claude/settings.json"; fi
   mkdir -p "$(dirname "$settings")"
-  START_CMD="python3 \"$DEST/$NAME/hooks/session_start.py\"" \
-  GUARD_CMD="python3 \"$DEST/$NAME/hooks/write_guard.py\"" \
-  SETTINGS="$settings" python3 - <<'PY'
+  START_CMD="$PYTHON \"$DEST/$NAME/hooks/session_start.py\"" \
+  GUARD_CMD="$PYTHON \"$DEST/$NAME/hooks/write_guard.py\"" \
+  SETTINGS="$settings" $PYTHON - <<'PY'
 import json, os
 from pathlib import Path
 
