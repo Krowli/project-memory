@@ -75,6 +75,41 @@ above — a search practically never comes back empty, so establishing absence i
   working when the agent cooperates, not how often it does.
 - One run, 18 questions, one grader per batch, questions written by a model from the corpus.
 
+## Against the closest competitor
+
+`evals/compare_basic_memory.py` runs Basic Memory 0.22.1 over the same 90 pages and
+the same 270 queries, scored by the same scorer. It is the one system in the field
+making the same core bet — markdown on disk, human-editable, git-friendly — and it
+adds what this skill does not have: a persistent hybrid index (SQLite FTS plus
+local embeddings, 90 entities embedded here) and a real link graph. It needs no API
+key, which is why it can be measured honestly and mem0 cannot.
+
+| | shipped | basic-memory |
+|---|---|---|
+| overall nDCG@10 | 0.649 | 0.640 |
+| keywords | 0.792 | **0.830** |
+| paraphrase | **0.532** | 0.481 |
+| prose | 0.622 | 0.609 |
+
+Paired difference **+0.009 [−0.040, +0.058] — not significant.** On this corpus the
+two are indistinguishable overall. The split is the interesting part: the hybrid
+system is better on bare keywords and *worse* on paraphrase, which is the second
+independent sign here that adding embeddings does not automatically buy the thing
+embeddings are supposed to buy (see `dense_probe.py`, where dense-only scored 0.347
+on paraphrase against the lexical ranker's 0.532).
+
+**What this does not say.** Both systems ran at their defaults, on one corpus, with
+a query set written against these pages rather than by either project. Latency is
+not comparable and is deliberately not quoted as a result: Basic Memory is designed
+to run as a long-lived MCP server, and measuring it through a fresh CLI process per
+query measures process startup and model loading, not the product. Its link graph,
+its sync and its editing tools are not exercised at all — this compares one axis,
+retrieval quality, and nothing else.
+
+**mem0 is not measured here.** Its pipeline extracts facts with an LLM, so it needs
+a key and spends money per run; a substitute local model would produce a number
+that could not honestly be labelled mem0.
+
 ## What this cannot tell you
 
 **The corpus and the queries were written by a language model.** They are not
