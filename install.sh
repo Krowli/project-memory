@@ -6,6 +6,7 @@
 #   ./install.sh --dest ~/.claude/skills
 #   ./install.sh --store home                 # skip the storage question
 #   ./install.sh --no-hook                    # do not touch settings.json
+#   ./install.sh --no-store                   # install the skill and nothing else
 #
 # With no flags it installs once for every project (~/.agents/skills), which is
 # what you usually want: the skill is one program, the notes are per project and
@@ -42,7 +43,7 @@ while [ $# -gt 0 ]; do
     --store)    STORE_MODE="${2:?--store needs gitignored|tracked|home}"; shift 2 ;;
     --no-store) NO_STORE=1; shift ;;
     --no-hook)  NO_HOOK=1; shift ;;
-    -h|--help)  sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -93,45 +94,57 @@ python3 "$DEST/$NAME/scripts/memory_search.py" --help >/dev/null \
 # the files from the repository.
 rm -rf "$DEST/$NAME/scripts/__pycache__"
 
-# ── the session hook ─────────────────────────────────────────────────────────
+# ── the hooks ────────────────────────────────────────────────────────────────
 # Installed as a plugin, the agent picks up hooks/hooks.json by itself. Installed
-# this way there is no plugin system, so the hook is registered in settings.json
-# directly. Without it the skill is merely available; with it the agent is told
-# it has a memory before the first turn, which is the whole difference between
-# "remember to mention it" and it just working.
+# this way there is no plugin system, so the hooks are registered in
+# settings.json directly. Two of them, and they do different jobs:
+#
+#   SessionStart  tells the agent it has a memory before the first turn, which is
+#                 the whole difference between "remember to mention it" and it
+#                 just working.
+#   PreToolUse    denies a hand-written page, so the validating write path is the
+#                 only way in. Without it, "writes are refused, not requested" is
+#                 itself a request: the ordinary Write tool walks around the gate.
 if [ "$NO_HOOK" != "1" ]; then
   if [ "$SCOPE" = "project" ]; then settings="$PWD/.claude/settings.json"; else settings="$HOME/.claude/settings.json"; fi
   mkdir -p "$(dirname "$settings")"
-  HOOK_CMD="python3 \"$DEST/$NAME/hooks/session_start.py\"" \
+  START_CMD="python3 \"$DEST/$NAME/hooks/session_start.py\"" \
+  GUARD_CMD="python3 \"$DEST/$NAME/hooks/write_guard.py\"" \
   SETTINGS="$settings" python3 - <<'PY'
 import json, os
 from pathlib import Path
 
 path = Path(os.environ["SETTINGS"])
-cmd = os.environ["HOOK_CMD"]
 data = {}
 if path.exists():
     try:
         data = json.loads(path.read_text(encoding="utf-8") or "{}")
     except json.JSONDecodeError:
-        print("settings:  existing settings.json is not valid JSON — hook NOT added",
+        print("settings:  existing settings.json is not valid JSON — hooks NOT added",
               flush=True)
         raise SystemExit(0)
 
+WANTED = [
+    ("SessionStart", "project-memory-session-start",
+     "startup|clear|compact|resume", os.environ["START_CMD"]),
+    ("PreToolUse", "project-memory-write-guard",
+     "Write|Edit|MultiEdit|NotebookEdit", os.environ["GUARD_CMD"]),
+]
+
 hooks = data.setdefault("hooks", {})
-entries = hooks.setdefault("SessionStart", [])
-# Idempotent: replace our own entry, never touch anyone else's.
-entries = [e for e in entries
-           if not any(h.get("_managed_id") == "project-memory-session-start"
-                      for h in e.get("hooks", []))]
-entries.append({
-    "matcher": "startup|clear|compact",
-    "hooks": [{"_managed_id": "project-memory-session-start",
-               "type": "command", "command": cmd}],
-})
-hooks["SessionStart"] = entries
+for event, managed_id, matcher, cmd in WANTED:
+    # Idempotent: replace our own entry, never touch anyone else's.
+    entries = [e for e in hooks.get(event, [])
+               if not any(h.get("_managed_id") == managed_id
+                          for h in e.get("hooks", []))]
+    entries.append({
+        "matcher": matcher,
+        "hooks": [{"_managed_id": managed_id, "type": "command", "command": cmd}],
+    })
+    hooks[event] = entries
+
 path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-print(f"hook:      registered in {path}")
+print(f"hooks:     session-start and write-guard registered in {path}")
 PY
 fi
 

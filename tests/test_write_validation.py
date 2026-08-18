@@ -89,6 +89,36 @@ def test_source_may_be_given_relative_to_the_store_parent(repo):
     assert run(repo, *ok_args("root-relative")) == 0
 
 
+def test_a_missing_kind_is_countable_apart_from_a_wrong_one(repo):
+    """Both were logged as `bad_kind`, so the per-code counts could not tell "the
+    agent forgot the flag" from "the agent picked a kind we do not have" — two
+    problems whose fixes point in opposite directions."""
+    import json
+
+    import memory_lib
+    run(repo, "--slug", "a", "--title", "T", "--source", "src/real.ts")
+    run(repo, "--slug", "b", "--title", "T", "--kind", "rationale", "--source", "src/real.ts")
+    codes = [json.loads(line)["code"]
+             for line in (repo / ".memory" / memory_lib.LOG_NAME)
+             .read_text(encoding="utf-8").splitlines()
+             if json.loads(line)["event"] == "reject"]
+    assert codes == ["no_kind", "bad_kind"]
+
+
+def test_the_documented_kinds_are_exactly_the_accepted_ones(repo):
+    """`references/page-format.md` and the shipped page template both advertised
+    `kind: note`, which the gate rejects, and neither mentioned `howto`."""
+    from pathlib import Path
+    reference = (Path(__file__).resolve().parents[1] / "skills" / "project-memory"
+                 / "references" / "page-format.md").read_text(encoding="utf-8")
+    template = (Path(__file__).resolve().parents[1] / "skills" / "project-memory"
+                / "assets" / "page-template.md").read_text(encoding="utf-8")
+    for kind in memory_write.KINDS:
+        assert f"`{kind}`" in reference, f"{kind} is accepted but not documented"
+    assert "note" not in reference.replace("Notes", "").replace("note that", "")
+    assert f"kind: {memory_write.KINDS[0]}" in template
+
+
 def test_every_rejection_names_the_next_command(repo, capsys):
     """A rejection that does not say what to do next just teaches the agent to
     stop writing."""
