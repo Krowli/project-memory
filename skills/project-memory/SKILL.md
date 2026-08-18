@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.11+. No network access and no API keys needed.
 metadata:
   repository: https://github.com/Krowli/project-memory
-  version: "0.2.1"
+  version: "0.2.2"
 ---
 
 # Project memory

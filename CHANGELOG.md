@@ -6,6 +6,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-18
+
 ### Fixed
 
 - **The hooks were registered as `python3`, which is not a command Windows has.**
@@ -24,7 +26,6 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `hooks/hooks.json` cannot branch per platform, so the plugin path still
   hard-codes `python3`. That limitation is now in the README rather than in a
   surprise, with a test that keeps the two in sync.
-
 
 ## [0.2.1] - 2026-08-18
 
@@ -119,7 +120,6 @@ path that existed in one install mode out of four.
   `install.sh --check` reports what is installed against what is released without
   installing anything. A test now guards the `--help` line range, which had
   silently truncated once already.
-
 
 - **A reproducible evaluation, in the repository.** `python3 evals/run.py --by-type`
   over 90 pages and 270 queries with paired bootstrap intervals, plus an ambiguous
@@ -263,6 +263,8 @@ they found, all of it now covered by a test that fails when the fix is removed:
 - Claude Code plugin and marketplace manifests.
 - Test suite covering search, writing, frontmatter tolerance and manifests.
 
-[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/Krowli/project-memory/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/Krowli/project-memory/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Krowli/project-memory/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Krowli/project-memory/releases/tag/v0.1.0
