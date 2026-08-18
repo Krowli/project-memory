@@ -125,7 +125,7 @@ def test_it_stays_small_from_a_realistic_install_path(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", REALISTIC_INSTALL)
     _, out = run(tmp_path)
     context = out["hookSpecificOutput"]["additionalContext"]
-    assert REALISTIC_INSTALL in context
+    assert str(Path(REALISTIC_INSTALL)) in context
     assert len(context) < 2000, f"{len(context)} characters from a {len(REALISTIC_INSTALL)}-char install path"
 
 
@@ -140,5 +140,6 @@ def test_the_prose_alone_stays_within_budget(tmp_path, monkeypatch):
     """
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", REALISTIC_INSTALL)
     _, out = run(tmp_path)
-    prose = out["hookSpecificOutput"]["additionalContext"].replace(REALISTIC_INSTALL, "")
+    prose = out["hookSpecificOutput"]["additionalContext"].replace(
+        str(Path(REALISTIC_INSTALL)), "")
     assert len(prose) < 1700, f"prose alone is {len(prose)} characters"

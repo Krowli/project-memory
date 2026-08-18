@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,12 +21,18 @@ VERSION = "0.2.1"
 STORE_ENV = "PROJECT_MEMORY_DIR"
 STORE_DIRNAME = ".memory"
 LOG_NAME = ".log.jsonl"
+# One O_APPEND write is atomic against other processes on POSIX, and is not on
+# Windows, where 17 of 200 concurrent lines went missing. This serialises the
+# threads inside one process; O_APPEND still covers the cross-process case.
+_LOG_LOCK = threading.Lock()
 # Written by `install.sh --store tracked`: the pages here are meant to be
 # committed, so nothing should quietly add them to .gitignore behind the user.
 TRACKED_MARKER = ".tracked"
 
 LOCK_STALE_SECONDS = 30.0
 LOCK_TIMEOUT_SECONDS = 10.0
+# Windows refuses to replace a file another process has open; POSIX never does.
+REPLACE_TIMEOUT_SECONDS = 5.0
 
 
 class StoreUnavailable(Exception):
@@ -242,7 +249,19 @@ def atomic_write(path: Path, text: str) -> None:
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
         tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
+        # POSIX replaces a file no matter who has it open. Windows refuses with
+        # WinError 5 while any reader holds a handle, and a search reading the
+        # store is exactly that reader — so a concurrent search made a write fail
+        # outright rather than merely wait.
+        deadline = time.monotonic() + REPLACE_TIMEOUT_SECONDS
+        while True:
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.01)
     except BaseException:
         tmp.unlink(missing_ok=True)  # no litter in the store on a failed write
         raise
@@ -265,11 +284,23 @@ def _process_alive(pid: int) -> bool | None:
             SYNCHRONIZE = 0x00100000
             ERROR_INVALID_PARAMETER = 87  # no process with that id
             kernel32 = ctypes.windll.kernel32
-            handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-            if handle:
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            handle = kernel32.OpenProcess(
+                SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if not handle:
+                return kernel32.GetLastError() == ERROR_INVALID_PARAMETER
+            try:
+                # A process that has exited still opens successfully while anyone
+                # holds a handle to it, so the handle alone means nothing. The
+                # exit code does — and 259 is the one value that cannot be
+                # distinguished from "running", which is why it is reserved.
+                code = ctypes.c_ulong()
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                    return None
+                return code.value == STILL_ACTIVE
+            finally:
                 kernel32.CloseHandle(handle)
-                return True
-            return kernel32.GetLastError() == ERROR_INVALID_PARAMETER
         except Exception:
             return None
     try:
@@ -409,11 +440,12 @@ def log_event(store: Path, event: str, *, create: bool = False, **fields) -> Non
         line = json.dumps(record, ensure_ascii=False) + "\n"
         # One O_APPEND write() per line, so parallel writers cannot interleave
         # halves of two records into one unparseable line.
-        fd = os.open(store / LOG_NAME, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-        try:
-            os.write(fd, line.encode("utf-8"))
-        finally:
-            os.close(fd)
+        with _LOG_LOCK:
+            fd = os.open(store / LOG_NAME, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            try:
+                os.write(fd, line.encode("utf-8"))
+            finally:
+                os.close(fd)
     except Exception:
         # Telemetry must never be the reason a write or a search fails.
         pass

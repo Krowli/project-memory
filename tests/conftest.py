@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -32,3 +33,16 @@ def populated(store):
         "decision", ["src-tauri/src/database.rs"],
         "## Решение\n\nТолько MCP сервер пишет в базу. Frontend uses Tauri commands.\n")
     return store
+
+
+WINDOWS = sys.platform == "win32"
+
+# `os.geteuid` and `os.mkfifo` do not exist on Windows, and file modes there do not
+# mean what chmod means on POSIX — a 0o500 directory stays writable. Tests that
+# depend on either are skipped rather than faked, so the Windows run reports what
+# it actually covered.
+needs_posix = pytest.mark.skipif(WINDOWS, reason="POSIX-only: file modes, mkfifo, euid")
+
+
+def is_root() -> bool:
+    return not WINDOWS and os.geteuid() == 0

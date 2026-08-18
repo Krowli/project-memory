@@ -21,6 +21,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that one guarded probe.
 - The host identity in a lock file came from `os.uname()`, which does not exist on
   Windows, so every lock there was written and compared as `unknown-host`.
+- **A concurrent search made a write fail outright on Windows.** `os.replace`
+  replaces a file regardless of who has it open on POSIX and refuses with
+  WinError 5 while any reader holds a handle — and a search reading the store is
+  exactly that reader. The replace now retries for a few seconds instead of
+  raising.
+- **A process that had exited was reported as running on Windows.** `OpenProcess`
+  succeeds for as long as anyone holds a handle to a dead process, so the handle
+  alone means nothing; the exit code decides, with 259 (`STILL_ACTIVE`) meaning
+  running.
+- **17 of 200 concurrent log lines went missing on Windows.** One `O_APPEND` write
+  is atomic against other processes on POSIX and is not on Windows; appends within
+  a process are now serialised.
+- Tests that depend on POSIX file modes, `mkfifo` or `geteuid` are skipped on
+  Windows rather than faked, so the Windows run reports what it actually covered.
 
 ## [0.2.0] - 2026-08-18
 
