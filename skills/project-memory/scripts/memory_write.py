@@ -4,16 +4,18 @@
 Usage:
   python3 memory_write.py --slug SLUG --title TITLE --kind KIND
                           --source PATH [--source PATH ...] --body TEXT|-
-                          [--store DIR]
+                          [--supersedes SLUG] [--store DIR]
 
 Re-running with the same slug replaces same-header sections and appends new
-ones, so repeated calls are safe.
+ones, so repeated calls are safe. What was replaced is printed, because a
+replacement is destructive and the default store has no VCS behind it.
 
 **A page that is not worth keeping is refused, not written.** The refusal exits
 non-zero and names the next command, so the correction lands in the agent's own
 loop instead of in a rules file it may not read. This is the whole design: in
 the corpus this was built against, 104 of 495 pages were auto-generated stubs
-averaging 277 bytes, and they took the top two result slots for real queries.
+whose bodies ran to about 139 characters, and they took the top two result slots
+for real queries.
 """
 from __future__ import annotations
 
@@ -21,10 +23,21 @@ import argparse
 import datetime as _dt
 import re
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from memory_lib import ensure_store, find_store, log_event
+from memory_lib import (
+    StoreUnavailable,
+    atomic_write,
+    ensure_store,
+    find_store,
+    is_page,
+    log_event,
+    page_lock,
+    parse_page,
+    store_problem,
+)
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -34,41 +47,144 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 KINDS = ("decision", "bug", "concept", "howto")
 
 # Below this, a page is restating what the source file already says. Tuned to
-# the stub population it is meant to exclude (median 277 bytes including
-# frontmatter).
+# the stub population it is meant to exclude (bodies around 139 characters).
+# Measured against the resulting page, not against one write: an amendment that
+# records a reversal is the cheapest and most valuable write in the system, and
+# a floor on the increment forbade exactly that.
 MIN_BODY = 200
+
+# Frontmatter this script owns, in emission order. Everything else a page
+# carries is preserved untouched — rebuilding from a fixed whitelist silently
+# deleted any field a user or a later version added, which blocked the cheapest
+# possible fix for superseded pages.
+MANAGED_SCALARS = ("slug", "title", "kind", "created", "updated", "status", "superseded_by")
+MANAGED_LISTS = ("supersedes", "sources")
+
+# A fence is three OR MORE backticks or tildes. Matching exactly three was a real
+# bug: quoting a memory page requires a ````-fence around a page that itself
+# contains ```, and the first inner ``` then closed the outer fence, exposing a
+# quoted `## ` line as a heading. CommonMark's rule is used for the close — same
+# character, and at least as long as the opening run.
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 
 
 def split_sections(body: str) -> list[tuple[str | None, str]]:
-    """Split markdown into (header, chunk) pairs; leading text has header None."""
+    """Split markdown into (header, chunk) pairs; leading text has header None.
+
+    Fence-aware: a `## ` line inside a code fence is content, not a heading. The
+    store's own subject is markdown pages, so a page that quotes a page is the
+    normal case — and splitting inside the fence deleted the closing fence and
+    everything after it on the next write.
+    """
     out: list[tuple[str | None, str]] = []
     header: str | None = None
     buf: list[str] = []
+    fence: str | None = None
     for line in body.splitlines(keepends=True):
-        if line.startswith("## "):
+        match = _FENCE.match(line)
+        if match:
+            token = match.group(1)
+            if fence is None:
+                fence = token
+            elif token[0] == fence[0] and len(token) >= len(fence):
+                fence = None
+        elif fence is None and line.startswith("## "):
             out.append((header, "".join(buf)))
             header = line.strip()
             buf = [line]
-        else:
-            buf.append(line)
+            continue
+        buf.append(line)
     out.append((header, "".join(buf)))
     return out
 
 
-def merge(old_body: str, new_body: str) -> str:
+@dataclass
+class MergeResult:
+    body: str
+    replaced: list[str] = field(default_factory=list)
+    appended: list[str] = field(default_factory=list)
+
+
+def merge(old_body: str, new_body: str) -> MergeResult:
+    """Fold a new body into an existing page.
+
+    Same header replaces in place — moving it to the end made a one-section
+    amendment read as a whole-file rewrite in `git diff`. A new header is
+    appended. Lead-in prose is the section with no header and follows the same
+    rule: it used to be dropped whenever the page already had any, so a write
+    with no `## ` heading at all vanished while the command exited 0.
+    """
     old = split_sections(old_body)
-    incoming = split_sections(new_body)
-    replaced = {h for h, _ in incoming if h}
-    kept = [(h, c) for h, c in old if h is None or h not in replaced]
-    appended = [(h, c) for h, c in incoming if h]
-    lead_in = "".join(c for h, c in incoming if h is None).strip()
-    if lead_in and not any(h is None and c.strip() for h, c in kept):
-        kept = [(None, lead_in + "\n\n")] + [(h, c) for h, c in kept if h is not None]
-    return "".join(c for _, c in kept + appended).rstrip() + "\n"
+    sections = split_sections(new_body)
+    incoming_lead = "".join(c for h, c in sections if h is None).strip()
+
+    # A dict comprehension here silently dropped all but the last of two sections
+    # sharing a header, so a body with the same `## ` twice lost the first copy on
+    # a merge while keeping both on a new page. Same-header chunks are joined.
+    incoming: dict[str, str] = {}
+    order: list[str] = []
+    for header, chunk in sections:
+        if header is None:
+            continue
+        if header in incoming:
+            incoming[header] = incoming[header] + "\n\n" + chunk.strip()
+        else:
+            incoming[header] = chunk.strip()
+            order.append(header)
+
+    chunks: list[str] = []
+    replaced: list[str] = []
+    seen: set[str] = set()
+    for header, chunk in old:
+        if header is None:
+            text = incoming_lead if incoming_lead else chunk.strip()
+            if text:
+                chunks.append(text)
+            continue
+        # Only the first stored occurrence is replaced. Replacing every one wrote
+        # the same incoming text into the page twice.
+        if header in incoming and header not in seen:
+            replaced.append(header)
+            chunks.append(incoming[header])
+        else:
+            chunks.append(chunk.strip())
+        seen.add(header)
+
+    if incoming_lead and not any(h is None for h, _ in old):
+        chunks.insert(0, incoming_lead)
+
+    appended = [h for h in order if h not in seen]
+    chunks.extend(incoming[h] for h in appended)
+
+    return MergeResult(body="\n\n".join(c for c in chunks if c) + "\n",
+                       replaced=replaced, appended=appended)
+
+
+def render_frontmatter(meta: dict) -> str:
+    lines: list[str] = []
+    for key in MANAGED_SCALARS:
+        value = meta.get(key)
+        if value in (None, "", []):
+            continue
+        lines.append(f'{key}: "{value}"' if key == "title" else f"{key}: {value}")
+    for key in MANAGED_LISTS:
+        values = meta.get(key) or []
+        if values:
+            lines.append(f"{key}:")
+            lines.extend(f"  - {v}" for v in values)
+    for key in sorted(set(meta) - set(MANAGED_SCALARS) - set(MANAGED_LISTS)):
+        value = meta[key]
+        if isinstance(value, list):
+            lines.append(f"{key}:")
+            lines.extend(f"  - {v}" for v in value)
+        elif value not in (None, ""):
+            lines.append(f"{key}: {value}")
+    return "---\n" + "\n".join(lines) + "\n---\n\n"
 
 
 def write_page(store: Path, slug: str, title: str, kind: str,
-               sources: list[str], body: str) -> Path:
+               sources: list[str], body: str,
+               supersedes: list[str] | None = None) -> Path:
     if not SLUG_RE.match(slug):
         raise ValueError(
             f"invalid slug {slug!r}: lowercase letters, digits and single hyphens only")
@@ -76,23 +192,38 @@ def write_page(store: Path, slug: str, title: str, kind: str,
     path = store / f"{slug}.md"
     today = _dt.date.today().isoformat()
 
-    if path.exists():
-        from memory_lib import parse_page
-        existing = parse_page(path)
-        body = merge(existing.body, body)
-        sources = sorted(set(sources) | set(existing.meta.get("sources") or []))
-        created = existing.meta.get("created", today)
-    else:
-        created = today
-
-    fm = [f"slug: {slug}", f'title: "{title}"', f"kind: {kind}",
-          f"created: {created}", f"updated: {today}"]
-    if sources:
-        fm.append("sources:")
-        fm.extend(f"  - {s}" for s in sources)
-    path.write_text("---\n" + "\n".join(fm) + "\n---\n\n" + body.strip() + "\n",
-                    encoding="utf-8")
+    with page_lock(path):
+        meta: dict = {}
+        result = MergeResult(body=body)
+        if path.exists():
+            existing = parse_page(path)
+            meta = dict(existing.meta)
+            result = merge(existing.body, body)
+            sources = sorted(set(sources) | set(meta.get("sources") or []))
+            supersedes = sorted(set(supersedes or []) | set(meta.get("supersedes") or []))
+        meta.update({
+            "slug": slug, "title": " ".join(title.split()), "kind": kind,
+            "created": meta.get("created", today), "updated": today,
+            "sources": sources, "supersedes": supersedes or [],
+        })
+        atomic_write(path, render_frontmatter(meta) + result.body.strip() + "\n")
     return path
+
+
+def stamp_superseded(store: Path, slug: str, by_slug: str) -> None:
+    """Mark the page a new decision replaces, on the page itself.
+
+    The reversal has to be legible from the page that was reversed, not only from
+    the one that reversed it: search ranks pages independently, and an agent that
+    finds the old page has to be told it is old.
+    """
+    path = store / f"{slug}.md"
+    with page_lock(path):
+        page = parse_page(path)
+        meta = dict(page.meta)
+        meta.update({"slug": page.slug, "title": page.title, "status": "superseded",
+                     "superseded_by": by_slug, "updated": _dt.date.today().isoformat()})
+        atomic_write(path, render_frontmatter(meta) + page.body.strip() + "\n")
 
 
 def reject(store: Path, code: str, reason: str, repair: str, slug: str = "") -> int:
@@ -104,7 +235,7 @@ def reject(store: Path, code: str, reason: str, repair: str, slug: str = "") -> 
     """
     print(f"REJECTED: {reason}", file=sys.stderr)
     print(f"FIX: {repair}", file=sys.stderr)
-    log_event(store, "reject", code=code, slug=slug, reason=reason)
+    log_event(store, "reject", create=True, code=code, slug=slug, reason=reason)
     return 1
 
 
@@ -119,8 +250,40 @@ def resolve_source(src: str, store: Path) -> Path | None:
     return Path(src) if Path(src).exists() else None
 
 
-def validate(slug: str, kind: str, sources: list[str], body: str, store: Path) -> int | None:
+def _supersedes_chain(store: Path, start: str, target: str, depth: int = 20) -> bool:
+    """Whether following `superseded_by` from `start` reaches `target`.
+
+    Without this, a page could be superseded by a page it had itself superseded.
+    Every page in the loop then carries `status: superseded`, so the whole chain
+    is demoted and marked obsolete and nothing in it is current.
+    """
+    seen = set()
+    slug = start
+    while slug and slug not in seen and depth > 0:
+        if slug == target:
+            return True
+        seen.add(slug)
+        path = store / f"{slug}.md"
+        if not path.exists():
+            return False
+        try:
+            slug = parse_page(path).superseded_by or ""
+        except OSError:
+            return False
+        depth -= 1
+    return False
+
+
+def validate(slug: str, kind: str, sources: list[str], body: str, store: Path,
+             supersedes: list[str], resulting_body: str) -> int | None:
     """Return an exit code to refuse the write, or None to let it through."""
+    problem = store_problem(store)
+    if problem:
+        return reject(
+            store, "store_unusable", problem,
+            "point --store or $PROJECT_MEMORY_DIR at a directory, or restore the "
+            "symlink target, then retry", slug)
+
     if not SLUG_RE.match(slug):
         return reject(
             store, "bad_slug",
@@ -148,11 +311,50 @@ def validate(slug: str, kind: str, sources: list[str], body: str, store: Path) -
             f"check the paths — they are resolved against {store.parent} and the "
             "working directory — then retry", slug)
 
-    if len(body.strip()) < MIN_BODY:
+    if slug in supersedes:
+        return reject(
+            store, "supersede_self",
+            "--supersedes names the page being written; a page cannot replace itself",
+            "drop --supersedes, or name the earlier page this one replaces", slug)
+
+    absent = [s for s in supersedes if not (store / f"{s}.md").exists()]
+    if absent:
+        return reject(
+            store, "supersede_missing",
+            f"--supersedes names no page in this store: {', '.join(absent)}",
+            "search for the page you mean and use its exact slug, or drop "
+            "--supersedes if nothing is being replaced", slug)
+
+    # Stamping walks through the path, so a page that is a symlink out of the
+    # store would have its target read and copied into the store as a real file.
+    # That turned --supersedes into the exfiltration primitive the read path had
+    # just been fixed to close.
+    root = store.resolve()
+    unsafe = [s for s in supersedes if not is_page(store / f"{s}.md", root)]
+    if unsafe:
+        return reject(
+            store, "supersede_unsafe",
+            f"--supersedes names something that is not a page of this store: "
+            f"{', '.join(unsafe)} (a symlink out of the store, or not a regular file)",
+            "inspect that path by hand; the write path will not follow it", slug)
+
+    # Follow `superseded_by` forward from the page being written: after this
+    # write the target points at it, so a cycle exists exactly when the target is
+    # already downstream of this page.
+    cycle = [s for s in supersedes if _supersedes_chain(store, slug, s)]
+    if cycle:
+        return reject(
+            store, "supersede_cycle",
+            f"--supersedes would make a cycle: {', '.join(cycle)} is already "
+            f"superseded, directly or transitively, by {slug!r}",
+            "supersede the newest page in that chain, not one already replaced", slug)
+
+    if len(resulting_body.strip()) < MIN_BODY:
         return reject(
             store, "body_too_short",
-            f"body is {len(body.strip())} characters, minimum is {MIN_BODY} — a page this "
-            "short restates what reading the source would already show",
+            f"the page would be {len(resulting_body.strip())} characters, minimum is "
+            f"{MIN_BODY} — a page this short restates what reading the source would "
+            "already show",
             "write what a future agent could NOT reconstruct from the code (the cause "
             "behind the symptom, the alternative that was rejected and why), then retry",
             slug)
@@ -167,6 +369,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--kind", default=None, help=f"one of: {', '.join(KINDS)}")
     ap.add_argument("--source", action="append", default=[],
                     help="file this page is about; repeatable; must exist")
+    ap.add_argument("--supersedes", action="append", default=[], metavar="SLUG",
+                    help="slug this page replaces; that page is marked superseded")
     ap.add_argument("--body", default=None, help="page body, or - to read stdin")
     ap.add_argument("--store", type=Path, default=None)
     args = ap.parse_args(argv)
@@ -184,20 +388,58 @@ def main(argv: list[str] | None = None) -> int:
             "no --body given",
             "pass --body with the text, or --body - to read it from stdin", args.slug)
 
+    if not body.strip():
+        # An empty body used to merge to a no-op: exit 0, nothing printed about
+        # what changed, and `updated:` bumped on a page nobody touched.
+        return reject(
+            store, "no_body", "the body is empty",
+            "pass the page text with --body, or --body - to read it from stdin",
+            args.slug)
+
     if args.kind is None:
         return reject(
-            store, "bad_kind",
+            store, "no_kind",
             f"no --kind given; one of: {', '.join(KINDS)}",
             "add --kind decision|bug|concept|howto and retry", args.slug)
 
-    refusal = validate(args.slug, args.kind, args.source, body, store)
+    path = store / f"{args.slug}.md"
+    existed = path.exists()
+    # The floor applies to the page that will exist, so a short amendment to a
+    # substantial page is allowed while a thin new page is not.
+    try:
+        result = merge(parse_page(path).body, body) if existed else MergeResult(body=body)
+    except OSError:
+        result = MergeResult(body=body)
+
+    refusal = validate(args.slug, args.kind, args.source, body, store,
+                       args.supersedes, result.body)
     if refusal is not None:
         return refusal
 
-    existed = (store / f"{args.slug}.md").exists()
-    path = write_page(store, args.slug, args.title, args.kind, args.source, body)
-    log_event(store, "write", slug=args.slug, kind=args.kind,
-              mode="merge" if existed else "create", chars=len(body.strip()))
+    try:
+        path = write_page(store, args.slug, args.title, args.kind,
+                          args.source, body, args.supersedes)
+        for slug in args.supersedes:
+            stamp_superseded(store, slug, args.slug)
+    except StoreUnavailable as exc:
+        return reject(store, "store_unusable", str(exc),
+                      "point --store at a usable directory and retry", args.slug)
+    except OSError as exc:
+        # A read-only or full store must produce a refusal, not a traceback: the
+        # agent has to be able to tell "this page is bad" from "this disk is".
+        return reject(store, "store_unwritable", f"cannot write to {store}: {exc}",
+                      "check permissions and free space on that path, then retry",
+                      args.slug)
+
+    log_event(store, "write", create=True, slug=args.slug, kind=args.kind,
+              mode="merge" if existed else "create", chars=len(body.strip()),
+              replaced=result.replaced, supersedes=args.supersedes)
+    for header in result.replaced:
+        print(f"replaced: {header}", file=sys.stderr)
+    for header in result.appended:
+        print(f"appended: {header}", file=sys.stderr)
+    for slug in args.supersedes:
+        print(f"superseded: {slug}", file=sys.stderr)
     print(path)
     return 0
 

@@ -40,10 +40,24 @@ def read_log(store: Path, since: str | None) -> list[dict]:
             rec = json.loads(line)
         except json.JSONDecodeError:
             continue  # a torn line should not hide the rest of the log
+        if not isinstance(rec, dict) or "ts" not in rec:
+            continue  # nor should a line from some other writer
         if since and rec.get("ts", "") < since:
             continue
         out.append(rec)
     return out
+
+
+def _median(values: list[int]) -> int:
+    """The real median. The upper-middle value was reported for even counts, which
+    biased high exactly the statistic used to argue about the length floor."""
+    if not values:
+        return 0
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) // 2
 
 
 def summarise(records: list[dict]) -> dict:
@@ -58,7 +72,7 @@ def summarise(records: list[dict]) -> dict:
         "writes": len(writes),
         "creates": sum(1 for r in writes if r.get("mode") == "create"),
         "merges": sum(1 for r in writes if r.get("mode") == "merge"),
-        "median_chars": sorted(r.get("chars", 0) for r in writes)[len(writes) // 2] if writes else 0,
+        "median_chars": _median([r.get("chars", 0) for r in writes]),
         "rejects": len(rejects),
         "reject_rate": round(len(rejects) / attempts, 3) if attempts else 0.0,
         "reject_codes": dict(Counter(r.get("code", "?") for r in rejects).most_common()),
