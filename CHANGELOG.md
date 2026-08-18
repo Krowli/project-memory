@@ -6,50 +6,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
-
-- **A reproducible evaluation, in the repository.** `python3 evals/run.py --by-type`
-  over 90 pages and 270 queries with paired bootstrap intervals, plus an ambiguous
-  set and an unanswerable set. `evals/gate_value.py` measures what the write gate
-  is worth by putting the stubs it refuses back into the corpus. Nothing in
-  `references/retrieval.md` is now argued from figures a reader cannot re-run.
-- **A persistent SQLite FTS5 index** (`memory_index.py`), and it is a cache the
-  search is allowed to ignore. End to end, as a shell invocation: 235 ms → 99 ms at
-  90 pages, 1887 ms → 174 ms at 1000, 4637 ms → 196 ms at 5000. The ~5000-page
-  ceiling the documentation used to name is gone. It lives in the cache directory
-  rather than the store, uses no WAL, rebuilds whole rather than repairing, elects
-  one builder without waiting, and falls back to reading the markdown on any error
-  at all. `PROJECT_MEMORY_NO_FTS5=1` forces the fallback, and CI now runs the whole
-  suite twice so that path cannot rot.
-- `--json` reports `served_by`, so two agents served by different paths can explain
-  a difference in tail ordering rather than wondering about it.
-
-### Fixed
-
-- **Turkish `İ` was unfindable by its ASCII spelling**: `casefold` turns it into
-  `i` plus a combining dot, which matches nothing anyone types.
-- **The evaluation's own FTS5 baseline was misconfigured** — without `tokenchars
-  '_'` the pre-tokenised round trip changed 73 of 486 texts — and `bm25()` weights
-  are positional over every column, so passing two weights for a three-column table
-  gave the title weight to the unindexed slug and left the title at 1.0. The
-  title-weight regression test caught the second one.
-- **The supersession tests were still weak.** The fixture is now an unlinked
-  control pair: without the link the obsolete page must rank first, and adding the
-  link alone must reverse it. The earlier version guarded a score comparison that
-  the ranker change quietly invalidated.
-
-### Changed
-
-- `references/retrieval.md` reports measured numbers with paired intervals, states
-  what the harness cannot tell you, and records the negative result it produced:
-  no score or word-overlap threshold can separate a question the store can answer
-  from one it cannot (top-hit medians 5.32 against 5.29). `SKILL.md` now tells the
-  agent that a result list is not evidence that an answer exists — the previous
-  wording, "if search returns nothing relevant, say so", described a case that
-  almost never happens.
-
-
-## [0.2.0] - 2026-08-17
+## [0.2.0] - 2026-08-18
 
 An audit of the skill against its own claims. Four ways a re-run could destroy
 part of a page, a store that could take retrieval down or leak a file it never
@@ -102,6 +59,58 @@ path that existed in one install mode out of four.
 
 ### Added
 
+- **The runtime knows its own version.** `--version` on every script, and the
+  session hook tells the agent which version the project is running. A `curl`
+  install has no package manager to ask, so until now neither the user nor the
+  agent could tell 0.1.0 from 0.2.0 on disk.
+- **`install.sh` installs the latest released tag**, not the tip of `main`, so an
+  install is reproducible and a version number means something.
+  `PROJECT_MEMORY_REF` still takes a branch or a specific tag, and
+  `install.sh --check` reports what is installed against what is released without
+  installing anything. A test now guards the `--help` line range, which had
+  silently truncated once already.
+
+
+- **A reproducible evaluation, in the repository.** `python3 evals/run.py --by-type`
+  over 90 pages and 270 queries with paired bootstrap intervals, plus an ambiguous
+  set and an unanswerable set. `evals/gate_value.py` measures what the write gate
+  is worth by putting the stubs it refuses back into the corpus. Nothing in
+  `references/retrieval.md` is now argued from figures a reader cannot re-run.
+- **A persistent SQLite FTS5 index** (`memory_index.py`), and it is a cache the
+  search is allowed to ignore. End to end, as a shell invocation: 235 ms → 99 ms at
+  90 pages, 1887 ms → 174 ms at 1000, 4637 ms → 196 ms at 5000. The ~5000-page
+  ceiling the documentation used to name is gone. It lives in the cache directory
+  rather than the store, uses no WAL, rebuilds whole rather than repairing, elects
+  one builder without waiting, and falls back to reading the markdown on any error
+  at all. `PROJECT_MEMORY_NO_FTS5=1` forces the fallback, and CI now runs the whole
+  suite twice so that path cannot rot.
+- `--json` reports `served_by`, so two agents served by different paths can explain
+  a difference in tail ordering rather than wondering about it.
+
+### Fixed while measuring
+
+- **Turkish `İ` was unfindable by its ASCII spelling**: `casefold` turns it into
+  `i` plus a combining dot, which matches nothing anyone types.
+- **The evaluation's own FTS5 baseline was misconfigured** — without `tokenchars
+  '_'` the pre-tokenised round trip changed 73 of 486 texts — and `bm25()` weights
+  are positional over every column, so passing two weights for a three-column table
+  gave the title weight to the unindexed slug and left the title at 1.0. The
+  title-weight regression test caught the second one.
+- **The supersession tests were still weak.** The fixture is now an unlinked
+  control pair: without the link the obsolete page must rank first, and adding the
+  link alone must reverse it. The earlier version guarded a score comparison that
+  the ranker change quietly invalidated.
+
+### Changed
+
+- `references/retrieval.md` reports measured numbers with paired intervals, states
+  what the harness cannot tell you, and records the negative result it produced:
+  no score or word-overlap threshold can separate a question the store can answer
+  from one it cannot (top-hit medians 5.32 against 5.29). `SKILL.md` now tells the
+  agent that a result list is not evidence that an answer exists — the previous
+  wording, "if search returns nothing relevant, say so", described a case that
+  almost never happens.
+
 - **`--supersedes <slug>`.** The replaced page is stamped `status: superseded` and
   `superseded_by:`, scored at half its BM25F score and marked in every result
   line. Ranking previously had no recency or authority term and tied
@@ -120,8 +129,6 @@ path that existed in one install mode out of four.
   fifteen commits of exactly the work it says to record.
 - The session hook fires on `resume` as well, which the test named for it did not
   actually cover.
-
-### Changed
 
 - The documented heredoc terminator is `PMEOF`, not `EOF`: a page documenting
   heredocs ended its own body early and the shell executed the rest of the text.

@@ -53,6 +53,20 @@ gemini extensions install https://github.com/Krowli/project-memory
 curl -fsSL https://raw.githubusercontent.com/Krowli/project-memory/main/install.sh | bash
 ```
 
+It installs the **latest released tag**, not the tip of `main`, so the version it
+prints means something and two people running it on the same day get the same
+code. `PROJECT_MEMORY_REF=main` takes the branch instead.
+
+To update, run the same command again. To see whether that is worth doing:
+
+```bash
+./install.sh --check      # installed: 0.2.0 / latest: v0.2.0 / update: up to date
+```
+
+Every script also answers `--version`, and the session hook tells the agent which
+version this project is running, because a `curl` install has no package manager
+to ask.
+
 Run it from anywhere. It installs the skill to `~/.agents/skills/`, registers the
 two hooks, and stops there — a store is not something to set up per project,
 it appears at the first write and shields itself as it is created.

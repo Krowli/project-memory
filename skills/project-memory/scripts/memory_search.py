@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import memory_index
-from memory_lib import Page, find_store, load_pages, log_event, parse_page
+from memory_lib import VERSION, Page, find_store, load_pages, log_event, parse_page
 
 # BM25F parameters. k1/b are the textbook values; a cross-validated sweep moved
 # nDCG@10 by 0.017, which does not justify carrying tuned constants. The title
@@ -315,6 +315,8 @@ def format_hit(score: float, page: Page, query: str = "") -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Search project memory.")
+    ap.add_argument("--version", action="version",
+                    version=f"project-memory {VERSION} ({Path(__file__).resolve().parent.parent})")
     ap.add_argument("query", nargs="+")
     ap.add_argument("-k", type=int, default=10, help="max results (default 10)")
     ap.add_argument("--store", type=Path, default=None)
