@@ -105,8 +105,40 @@ def test_hook_configs_point_at_the_script_that_exists(rel):
 
 def test_claude_hook_fires_on_resume_paths_too():
     """A session that was cleared or compacted has lost the instruction; without
-    these matchers the memory silently stops being used mid-work."""
+    these matchers the memory silently stops being used mid-work. `resume` was
+    missing from the matcher while this test — named for it — asserted the other
+    three, so the gap was documented as covered."""
     data = json.loads((REPO / "hooks" / "hooks.json").read_text())
     matcher = data["hooks"]["SessionStart"][0]["matcher"]
-    for event in ("startup", "clear", "compact"):
+    for event in ("startup", "clear", "compact", "resume"):
         assert event in matcher
+
+
+REALISTIC_INSTALL = ("/Users/somebody/Library/Application Support/Some Vendor/"
+                     "agents-workspace/skills/project-memory")
+
+
+def test_it_stays_small_from_a_realistic_install_path(tmp_path, monkeypatch):
+    """The budget was only ever measured from the short in-repo path, so the text
+    could grow until a normal install location pushed the injected block over its
+    own limit with no test noticing. The block carries the script path twice."""
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", REALISTIC_INSTALL)
+    _, out = run(tmp_path)
+    context = out["hookSpecificOutput"]["additionalContext"]
+    assert REALISTIC_INSTALL in context
+    assert len(context) < 2000, f"{len(context)} characters from a {len(REALISTIC_INSTALL)}-char install path"
+
+
+def test_the_prose_alone_stays_within_budget(tmp_path, monkeypatch):
+    """Path length is not something this project controls; the wording is. Bounding
+    the prose separately is what keeps the total under control on a path longer
+    than the one above.
+
+    The budget: 2000 total, minus the skill path twice, plus about 25 characters
+    of `/scripts/memory_*.py` each time — so 1700 of prose leaves room for an
+    install path of roughly 125 characters.
+    """
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", REALISTIC_INSTALL)
+    _, out = run(tmp_path)
+    prose = out["hookSpecificOutput"]["additionalContext"].replace(REALISTIC_INSTALL, "")
+    assert len(prose) < 1700, f"prose alone is {len(prose)} characters"

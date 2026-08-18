@@ -2,6 +2,7 @@
 times. These tests pin the ones that will drift: the version, the skills path,
 and the repository URL."""
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -42,10 +43,30 @@ def test_manifest_is_valid_json_and_names_the_plugin(rel):
 
 
 def test_all_manifests_declare_the_same_version():
+    """Eight files carry this string. README's Contributing section used to name
+    two of them, so the other six drifted silently until this test caught them."""
     versions = {rel: load(rel)["version"] for rel in VERSIONED}
     versions[".claude-plugin/marketplace.json"] = load(
         ".claude-plugin/marketplace.json")["plugins"][0]["version"]
+
+    pyproject = re.search(r'^version = "([^"]+)"',
+                          (REPO / "pyproject.toml").read_text(encoding="utf-8"), re.M)
+    assert pyproject, "pyproject.toml declares no version"
+    versions["pyproject.toml"] = pyproject.group(1)
+
+    skill = re.search(r'^  version: "([^"]+)"',
+                      (REPO / "skills" / "project-memory" / "SKILL.md")
+                      .read_text(encoding="utf-8"), re.M)
+    assert skill, "SKILL.md metadata declares no version"
+    versions["SKILL.md"] = skill.group(1)
+
     assert len(set(versions.values())) == 1, f"version drift across manifests: {versions}"
+
+
+def test_readme_names_every_file_that_carries_the_version():
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    for rel in [*VERSIONED, ".claude-plugin/marketplace.json", "pyproject.toml"]:
+        assert rel in readme, f"Contributing does not tell a contributor to bump {rel}"
 
 
 @pytest.mark.parametrize("rel", SKILLS_PATH)
