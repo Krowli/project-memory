@@ -45,6 +45,50 @@ the index safe to prefer: it is chosen for speed, and it costs nothing in what t
 agent actually gets back. Choosing between the formulas on quality grounds would
 be reading noise.
 
+### The hybrid, re-measured — and the stated reason was wrong
+
+`evals/dense_probe.py` (optional: needs `fastembed`, downloads a model, which the
+skill itself never does) runs dense and hybrid retrieval over the same 90 pages and
+270 queries, with `paraphrase-multilingual-MiniLM-L12-v2` and reciprocal rank
+fusion.
+
+| method | nDCG@10 | vs shipped, paired | keywords | paraphrase | prose |
+|---|---|---|---|---|---|
+| shipped | 0.649 | — | 0.792 | 0.532 | 0.622 |
+| dense only | 0.582 | −0.067 [−0.125, −0.013] | 0.757 | **0.347** | 0.640 |
+| hybrid (RRF) | **0.695** | **+0.046 [+0.014, +0.075]** | 0.830 | 0.535 | 0.719 |
+
+**The hybrid is genuinely better, and this document used to say it was not.** The
+earlier claim — a +0.032 gain whose interval "sits two thousandths from zero" —
+does not hold here: on this corpus the gain is +0.046 and the interval is clear of
+zero. Quality is not the reason to refuse it.
+
+The reason is architecture, and it is much larger than the quality difference. The
+skill is a script run afresh for every search, so the model is loaded every time:
+
+| | |
+|---|---|
+| whole search, as the agent runs it | **72 ms** |
+| cold process to a single query vector | **~1000 ms**, peak RSS **1.06 GB** |
+
+Fourteen times the latency and a gigabyte of resident memory, per search, for
++0.046. That trade only changes if something keeps the model resident — a daemon,
+which is the one thing this design refuses to have. If that constraint ever goes
+away, this is the first thing to revisit, and the harness to decide it with is
+already here.
+
+One finding worth keeping regardless: **dense retrieval is worst exactly where it
+is supposed to win.** On paraphrase queries — written deliberately in different
+vocabulary from the page — it scores 0.347 against the lexical ranker's 0.532.
+Whole-page embedding of ~1.5 KB documents dilutes the signal, and a chunk-level
+index might behave differently; what this rules out is the cheap version of the
+idea, not the idea.
+
+A note on measuring it: `fastembed` does not normalise this model's output
+(measured norms 3.4 and 4.9), so a raw dot product ranks by document length as
+much as by meaning. The first run of this probe did exactly that and reported the
+hybrid gain as *not* significant. The correction is in the script.
+
 ### The historical figures
 
 An earlier version of this document argued the design from a private measurement:

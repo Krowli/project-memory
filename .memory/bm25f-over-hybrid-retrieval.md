@@ -3,7 +3,9 @@ slug: bm25f-over-hybrid-retrieval
 title: "Lexical BM25F, and why the embedding hybrid was rejected"
 kind: decision
 created: 2026-08-17
-updated: 2026-08-17
+updated: 2026-08-18
+status: superseded
+superseded_by: hybrid-rejected-on-cost-not-quality
 sources:
   - skills/project-memory/references/retrieval.md
   - skills/project-memory/scripts/memory_search.py
