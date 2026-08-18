@@ -114,7 +114,18 @@ def read_text(path: Path) -> str:
     succeeding — the store grew while retrieval was dead. A replacement character
     in one page costs that page some recall; a traceback costs all of them.
     """
-    return path.read_text(encoding="utf-8", errors="replace")
+    deadline = time.monotonic() + REPLACE_TIMEOUT_SECONDS
+    while True:
+        try:
+            return path.read_text(encoding="utf-8", errors="replace")
+        except PermissionError:
+            # Windows only: while a writer is swapping the file into place a reader
+            # gets a sharing violation. POSIX readers keep reading the old inode and
+            # never see this. Without the retry a search silently drops the page
+            # that was being written — degraded rather than wrong, but avoidable.
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(0.01)
 
 
 def parse_page(path: Path) -> Page:

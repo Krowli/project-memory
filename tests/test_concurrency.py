@@ -47,6 +47,7 @@ def test_a_page_is_never_observed_half_written(tmp_path):
     (tmp_path / "src" / "real.ts").write_text("export {}")
     store = tmp_path / ".memory"
     sys.path.insert(0, str(SCRIPT.parent))
+    import memory_lib
     import memory_write
 
     memory_write.write_page(store, "p", "T", "concept", ["src/real.ts"],
@@ -55,8 +56,10 @@ def test_a_page_is_never_observed_half_written(tmp_path):
     seen = []
 
     def reader():
+        # Through the product's own read path, which is what a search uses and
+        # which absorbs the Windows sharing violation a raw read would raise.
         for _ in range(400):
-            seen.append(page.read_text(encoding="utf-8").count("---"))
+            seen.append(memory_lib.read_text(page).count("---"))
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         r = pool.submit(reader)
