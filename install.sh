@@ -7,6 +7,11 @@
 #   ./install.sh --store home                 # skip the storage question
 #   ./install.sh --no-hook                    # do not touch settings.json
 #   ./install.sh --no-store                   # install the skill and nothing else
+#   ./install.sh --check                      # what is installed, and is there anything newer
+#
+# By default this installs the latest released tag, not the tip of main, so an
+# install is reproducible and a version number means something. Set
+# PROJECT_MEMORY_REF to take a branch or a specific tag instead.
 #
 # With no flags it installs once for every project (~/.agents/skills), which is
 # what you usually want: the skill is one program, the notes are per project and
@@ -28,13 +33,14 @@
 set -euo pipefail
 
 REPO="${PROJECT_MEMORY_REPO:-https://github.com/Krowli/project-memory}"
-REF="${PROJECT_MEMORY_REF:-main}"
+REF="${PROJECT_MEMORY_REF:-}"
 NAME="project-memory"
 DEST=""
 SCOPE="user"
 STORE_MODE="${PROJECT_MEMORY_STORE:-}"
 NO_STORE=0
 NO_HOOK=0
+CHECK=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,7 +49,8 @@ while [ $# -gt 0 ]; do
     --store)    STORE_MODE="${2:?--store needs gitignored|tracked|home}"; shift 2 ;;
     --no-store) NO_STORE=1; shift ;;
     --no-hook)  NO_HOOK=1; shift ;;
-    -h|--help)  sed -n '2,26p' "$0"; exit 0 ;;
+    --check)    CHECK=1; shift ;;
+    -h|--help)  sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -60,6 +67,46 @@ fi
 command -v git >/dev/null || { echo "git is required" >&2; exit 1; }
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 
+# The latest released tag, or empty if the repository has never been tagged. A
+# `curl | bash` install used to take the tip of main, so two people running the
+# same command on the same day could get different code and neither could say
+# which version they had.
+latest_tag() {
+  git ls-remote --tags --refs "$REPO" 2>/dev/null | python3 -c '
+import re, sys
+tags = [m.group(1) for line in sys.stdin
+        if (m := re.search(r"refs/tags/(v\d+\.\d+\.\d+)$", line.strip()))]
+print(max(tags, key=lambda t: tuple(int(n) for n in t[1:].split("."))) if tags else "")
+'
+}
+
+installed_version() {
+  local lib="$1/$NAME/scripts/memory_lib.py"
+  [ -f "$lib" ] || { echo ""; return; }
+  sed -n 's/^VERSION = "\(.*\)"$/\1/p' "$lib" | head -1
+}
+
+if [ "$CHECK" = "1" ]; then
+  have="$(installed_version "$DEST")"
+  want="$(latest_tag)"
+  echo "installed: ${have:-nothing at $DEST/$NAME}"
+  echo "latest:    ${want:-no released tag yet}"
+  if [ -n "$have" ] && [ -n "$want" ] && [ "v$have" != "$want" ]; then
+    echo "update:    available — re-run this script to install $want"
+  elif [ -n "$have" ]; then
+    echo "update:    up to date"
+  fi
+  exit 0
+fi
+
+if [ -z "$REF" ]; then
+  REF="$(latest_tag)"
+  if [ -z "$REF" ]; then
+    REF="main"
+    echo "note:      no released tag found, installing the tip of main" >&2
+  fi
+fi
+
 # ── the skill ────────────────────────────────────────────────────────────────
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 git clone --depth 1 --branch "$REF" "$REPO" "$tmp/src" >/dev/null 2>&1
@@ -70,7 +117,7 @@ cp -R "$tmp/src/skills/$NAME" "$DEST/$NAME"
 # The hook travels with the skill: session_start.py resolves its sibling
 # scripts/ directory, so it works from wherever the skill was installed.
 cp -R "$tmp/src/hooks" "$DEST/$NAME/hooks"
-echo "skill:     $DEST/$NAME"
+echo "skill:     $DEST/$NAME  ($REF, version $(installed_version "$DEST"))"
 
 # Claude Code reads .claude/skills; point it at the same directory rather than
 # keeping a second copy that will drift.

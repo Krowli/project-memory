@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from memory_lib import (
+    VERSION,
     StoreUnavailable,
     atomic_write,
     ensure_store,
@@ -364,6 +365,8 @@ def validate(slug: str, kind: str, sources: list[str], body: str, store: Path,
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Write a project memory page.")
+    ap.add_argument("--version", action="version",
+                    version=f"project-memory {VERSION} ({Path(__file__).resolve().parent.parent})")
     ap.add_argument("--slug", required=True)
     ap.add_argument("--title", required=True)
     ap.add_argument("--kind", default=None, help=f"one of: {', '.join(KINDS)}")

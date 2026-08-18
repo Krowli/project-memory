@@ -49,18 +49,37 @@ def find_store(start: Path) -> Path | None:
     return None
 
 
+def _version(root: Path) -> str:
+    """The installed version, read from the scripts rather than duplicated here.
+
+    Without it neither the user nor the agent can tell which version is on disk,
+    which matters most for a `curl` install: there is no package manager to ask,
+    and the update path is re-running one command.
+    """
+    try:
+        for line in (root / SCRIPTS / "memory_lib.py").read_text(
+                encoding="utf-8").splitlines():
+            if line.startswith("VERSION = "):
+                return line.split("=", 1)[1].strip().strip("\"'")
+    except OSError:
+        pass
+    return ""
+
+
 def build_context() -> str:
     root = skill_root()
     search = root / SCRIPTS / "memory_search.py"
     write = root / SCRIPTS / "memory_write.py"
     store = find_store(Path.cwd())
 
+    version = _version(root)
     if store is None:
         state = ("This project has no memory store yet; the first write creates one "
                  "and makes it private automatically.")
     else:
         pages = len(list(store.glob("*.md")))
         state = f"This project has {pages} memory page(s) in {store}."
+    state = f"{state} (project-memory {version})" if version else state
 
     return (
         "<project-memory>\n"

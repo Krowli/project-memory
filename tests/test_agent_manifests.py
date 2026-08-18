@@ -60,6 +60,12 @@ def test_all_manifests_declare_the_same_version():
     assert skill, "SKILL.md metadata declares no version"
     versions["SKILL.md"] = skill.group(1)
 
+    runtime = re.search(r'^VERSION = "([^"]+)"',
+                        (REPO / "skills" / "project-memory" / "scripts" / "memory_lib.py")
+                        .read_text(encoding="utf-8"), re.M)
+    assert runtime, "memory_lib.py declares no VERSION"
+    versions["memory_lib.py"] = runtime.group(1)
+
     assert len(set(versions.values())) == 1, f"version drift across manifests: {versions}"
 
 

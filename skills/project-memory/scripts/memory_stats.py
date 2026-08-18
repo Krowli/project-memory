@@ -25,7 +25,7 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from memory_lib import LOG_NAME, find_store
+from memory_lib import LOG_NAME, VERSION, find_store
 
 
 def read_log(store: Path, since: str | None) -> list[dict]:
@@ -85,6 +85,8 @@ def summarise(records: list[dict]) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Summarise the project-memory log.")
+    ap.add_argument("--version", action="version",
+                    version=f"project-memory {VERSION} ({Path(__file__).resolve().parent.parent})")
     ap.add_argument("--store", type=Path, default=None)
     ap.add_argument("--since", default=None, help="ISO date, e.g. 2026-08-09")
     ap.add_argument("--json", action="store_true")
