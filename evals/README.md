@@ -106,9 +106,14 @@ query measures process startup and model loading, not the product. Its link grap
 its sync and its editing tools are not exercised at all — this compares one axis,
 retrieval quality, and nothing else.
 
-**mem0 is not measured here.** Its pipeline extracts facts with an LLM, so it needs
-a key and spends money per run; a substitute local model would produce a number
-that could not honestly be labelled mem0.
+**mem0 will not be measured here, and that is a decision rather than a gap.** Its
+pipeline extracts facts with an LLM, so a run needs an API key and spends money;
+substituting a small local model would produce a number that could not honestly
+carry the name. It is also a different class of system — conversational memory that
+stores extracted facts, not documents — so feeding it pre-written pages and asking
+known-item questions would measure it on a task it was never built for. A low score
+would mean "mem0 does something else", which is already known and needs no
+benchmark to say.
 
 ## What this cannot tell you
 
@@ -126,12 +131,12 @@ optimistic. Two things push against it, and neither removes it:
   sharply, that gap is the vocabulary-mismatch weakness of lexical search showing
   up, and the average across types hides it.
 
-**No competitor is measured here.** Comparing against mem0, Basic Memory, Zep or
-the embedding hybrid would need their stacks running over this same corpus. Until
-someone does that, any claim that this skill retrieves better than those is a
-hypothesis. What can be said from this harness is narrower and worth keeping
-separate: how the shipped ranker compares to the obvious alternatives that need no
-server, and whether its own documented parameters are earning their place.
+**One competitor is measured, not the field.** Basic Memory is above, and the
+embedding hybrid is in `dense_probe.py`. Zep, Letta, cipher and the rest are not:
+each needs its own stack running over this corpus, and until someone does that, any
+claim that this skill retrieves better than those remains a hypothesis. What the
+harness supports is narrower — how the shipped ranker compares to the alternatives
+that need no server, and whether its own documented parameters earn their place.
 
 **Retrieval quality is not the product.** Whether an agent gives better answers
 because this store exists is a different question, and this harness does not touch

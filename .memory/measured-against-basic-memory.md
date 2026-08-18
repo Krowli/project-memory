@@ -42,3 +42,20 @@ are untouched — this compares retrieval quality and nothing else.
 mem0 remains unmeasured because its extraction pipeline needs an LLM key, and a
 number produced with a substitute local model could not honestly be called mem0.
 See [[hybrid-rejected-on-cost-not-quality]].
+
+## mem0: decided against, not pending
+
+Not measuring mem0 is a decision now, not an outstanding task. Two reasons, and the
+second matters more than the first.
+
+It needs an API key and spends money per run, and there is none here. A small local
+model could stand in, but then the number could not honestly carry the name.
+
+More fundamentally it is a different class of system: conversational memory that
+extracts and stores facts, not a document store. Feeding it ninety pre-written
+pages and asking known-item questions would measure it on a task it was never built
+for, and a poor result would mean only "mem0 does something else" — which is
+already known and needs no benchmark to establish.
+
+Basic Memory was the fair comparison precisely because it makes the same bet:
+markdown on disk, human-editable, git-friendly, same class of task.
