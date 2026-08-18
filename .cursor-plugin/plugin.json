@@ -2,7 +2,7 @@
   "name": "project-memory",
   "displayName": "Project Memory",
   "description": "Durable project memory as markdown pages on disk: BM25F search, validated writes, no server",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": {
     "name": "Yehven Shcherbynskyi",
     "email": "lionmause999@gmail.com"

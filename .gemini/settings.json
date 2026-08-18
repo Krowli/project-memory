@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "modular": {
+      "args": [
+        "mcp-server",
+        "--db-path",
+        "/Users/krowli/Documents/zenia/project-memory/.modular/coordination.db",
+        "--global-db-path",
+        "/Users/krowli/Library/Application Support/com.modular.app/global.db",
+        "--agent-id",
+        "gemini-terminal",
+        "--project-path",
+        "/Users/krowli/Documents/zenia/project-memory"
+      ],
+      "command": "/Applications/Modular.app/Contents/MacOS/modular"
+    }
+  }
+}
