@@ -152,3 +152,30 @@ def test_a_failed_write_leaves_no_temp_file_behind(tmp_path):
     except TypeError:
         pass
     assert [p.name for p in store.iterdir() if p.name.endswith(".tmp")] == []
+
+
+def test_liveness_never_signals_a_process_directly(tmp_path):
+    """`os.kill(pid, 0)` is a liveness probe on POSIX and a kill on Windows, where
+    any signal but CTRL_C/CTRL_BREAK is delivered via TerminateProcess. It may
+    appear in exactly one place, behind the platform check."""
+    import memory_lib
+    source = Path(memory_lib.__file__).read_text(encoding="utf-8")
+    lines = source.splitlines()
+    calls = [n for n, line in enumerate(lines) if line.strip().startswith("os.kill(")]
+    assert len(calls) == 1, f"os.kill called on {len(calls)} lines, expected 1"
+
+    start = next(n for n, line in enumerate(lines) if line.startswith("def _process_alive"))
+    end = next(n for n, line in enumerate(lines) if line.startswith("def _owner_is_gone"))
+    assert start < calls[0] < end, "os.kill is called outside the platform-guarded probe"
+    probe = "\n".join(lines[start:end])
+    assert 'os.name == "nt"' in probe
+
+
+def test_a_dead_process_is_reported_dead_and_a_live_one_alive():
+    import os as _os
+
+    import memory_lib
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    assert memory_lib._process_alive(dead.pid) is False
+    assert memory_lib._process_alive(_os.getpid()) is True

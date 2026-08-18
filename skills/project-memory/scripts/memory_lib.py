@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import os
+import platform
 import re
 import time
 from dataclasses import dataclass, field
@@ -14,7 +15,7 @@ from pathlib import Path
 # and a test fails if any of them drift — but none of those files is importable,
 # and until this existed neither the user nor the agent could tell which version
 # was actually on disk.
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 STORE_ENV = "PROJECT_MEMORY_DIR"
 STORE_DIRNAME = ".memory"
@@ -247,6 +248,41 @@ def atomic_write(path: Path, text: str) -> None:
         raise
 
 
+def _process_alive(pid: int) -> bool | None:
+    """Whether that process still exists. None when this platform cannot say.
+
+    `os.kill(pid, 0)` is the POSIX idiom and is a liveness *probe* there. On
+    Windows it is not: the documentation is explicit that any signal other than
+    CTRL_C_EVENT and CTRL_BREAK_EVENT is delivered by calling TerminateProcess, so
+    the "probe" kills the process it was asking about. Shipping that would have
+    made every contended write terminate a sibling writer — CI caught it as a
+    hang, which was the mild version of the symptom.
+    """
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            SYNCHRONIZE = 0x00100000
+            ERROR_INVALID_PARAMETER = 87  # no process with that id
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            return kernel32.GetLastError() == ERROR_INVALID_PARAMETER
+        except Exception:
+            return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, and is not ours to signal
+    except OSError:
+        return None
+    return True
+
+
 def _owner_is_gone(lock: Path) -> bool:
     """Whether the process that took this lock no longer exists.
 
@@ -274,13 +310,9 @@ def _owner_is_gone(lock: Path) -> bool:
     if pid is not None and raw.endswith(_boot_id()):
         if pid == os.getpid():
             return False
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        except OSError:
-            return False  # exists but is not ours to signal
-        return False
+        alive = _process_alive(pid)
+        if alive is not None:
+            return not alive
 
     try:
         return (time.time() - lock.stat().st_mtime) > LOCK_STALE_SECONDS
@@ -293,10 +325,7 @@ def _boot_id() -> str:
     filesystem is never mistaken for a live local process. Deliberately not a
     boot timestamp: two processes must compute the same string, and any clock
     arithmetic drifts between them."""
-    try:
-        return os.uname().nodename
-    except AttributeError:
-        return "unknown-host"
+    return platform.node() or "unknown-host"
 
 
 class page_lock:

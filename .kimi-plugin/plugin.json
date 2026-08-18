@@ -1,6 +1,6 @@
 {
   "name": "project-memory",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Durable project memory as markdown pages on disk: BM25F search, validated writes, no server.",
   "author": {
     "name": "Yehven Shcherbynskyi",
