@@ -1,6 +1,6 @@
 {
   "name": "project-memory",
   "description": "Durable project memory as markdown pages on disk: BM25F search, validated writes, no server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "contextFileName": "GEMINI.md"
 }
