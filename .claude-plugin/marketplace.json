@@ -12,15 +12,23 @@
       "name": "project-memory",
       "source": "./",
       "description": "Durable project memory as markdown pages on disk, searchable without a server.",
-      "version": "0.1.0",
-      "author": { "name": "Yehven Shcherbynskyi" },
+      "version": "0.2.0",
+      "author": {
+        "name": "Yehven Shcherbynskyi"
+      },
       "homepage": "https://github.com/Krowli/project-memory",
       "repository": "https://github.com/Krowli/project-memory",
       "license": "MIT",
       "category": "productivity",
-      "keywords": ["memory", "retrieval", "documentation"],
+      "keywords": [
+        "memory",
+        "retrieval",
+        "documentation"
+      ],
       "strict": false,
-      "skills": ["./skills/project-memory"]
+      "skills": [
+        "./skills/project-memory"
+      ]
     }
   ]
 }
