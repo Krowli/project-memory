@@ -31,6 +31,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `memory_stats.py` reports sessions that changed the tree and recorded
   nothing, reminders sent, and writes per session — the numbers that decide
   whether the hook earns its place, which the log could not answer before.
+### Changed
+
+- `evals/dense_probe.py --static MODEL` runs the hybrid over a model2vec static
+  embedding model and reports the cold process cost next to the shipped search.
+  Measured with three `potion` models: no hybrid gain clears zero, and the
+  cheapest cold start is 527 ms against 86 ms for the whole shipped search — the
+  cheap form of the embedding idea is refused on the same grounds as the
+  expensive one. See `references/retrieval.md`.
 
 ## [0.2.2] - 2026-08-18
 
