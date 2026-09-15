@@ -1,5 +1,5 @@
 {
-  "description": "Project memory: tell the session it has one, and keep pages going through the validating write path.",
+  "description": "Project memory: tell the session it has one, keep pages going through the validating write path, and remind a session that changed things and recorded nothing.",
   "hooks": {
     "SessionStart": [
       {
@@ -20,6 +20,17 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/write_guard.py\"",
+            "async": false
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/session_stop.py\"",
             "async": false
           }
         ]

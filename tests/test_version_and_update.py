@@ -92,23 +92,28 @@ def test_the_command_written_into_settings_actually_runs(tmp_path):
     nothing in the suite would have noticed."""
     home = tmp_path / "home"
     home.mkdir()
+    # The branch that is checked out, so the test exercises the hooks in this
+    # tree; hard-coded `main` installed whatever main had, which on a feature
+    # branch is not the code under test.
+    branch = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"],
+                            capture_output=True, text=True).stdout.strip()
     proc = subprocess.run(
         ["bash", str(INSTALL), "--no-store", "--dest", str(tmp_path / "skills")],
         capture_output=True, text=True,
         env={**os.environ, "HOME": str(home), "PROJECT_MEMORY_REPO": str(REPO),
-             "PROJECT_MEMORY_REF": "main"})
+             "PROJECT_MEMORY_REF": branch if branch and branch != "HEAD" else "main"})
     assert proc.returncode == 0, proc.stderr
 
     settings = json.loads((home / ".claude" / "settings.json").read_text(encoding="utf-8"))
     commands = [h["command"] for entries in settings["hooks"].values()
                 for entry in entries for h in entry["hooks"]]
-    assert len(commands) == 2, commands
+    assert len(commands) == 3, commands
 
     for command in commands:
         run = subprocess.run(command, shell=True, capture_output=True, text=True,
                              input="{}", cwd=tmp_path)
         assert run.returncode == 0, f"{command} -> {run.stderr}"
-        json.loads(run.stdout)  # both hooks must answer with parseable JSON
+        json.loads(run.stdout)  # every hook must answer with parseable JSON
 
 
 def test_the_plugin_path_documents_its_fixed_interpreter():

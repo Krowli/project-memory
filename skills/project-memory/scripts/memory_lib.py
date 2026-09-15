@@ -28,6 +28,11 @@ _LOG_LOCK = threading.Lock()
 # Written by `install.sh --store tracked`: the pages here are meant to be
 # committed, so nothing should quietly add them to .gitignore behind the user.
 TRACKED_MARKER = ".tracked"
+# Claude Code exports the session id to the Bash tool, which is where a write
+# runs; stamped into every log line, it lets the Stop hook ask "did this session
+# record anything". Not in the documented environment, so its absence is fine —
+# the record simply carries no session.
+SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 
 LOCK_STALE_SECONDS = 30.0
 LOCK_TIMEOUT_SECONDS = 10.0
@@ -446,8 +451,9 @@ def log_event(store: Path, event: str, *, create: bool = False, **fields) -> Non
         if not ignore.exists():
             with ignore.open("w", encoding="utf-8") as fh:
                 fh.write(f"# holds every query and refusal; never commit it\n{LOG_NAME}\n")
+        session = os.environ.get(SESSION_ENV)
         record = {"ts": _dt.datetime.now().isoformat(timespec="seconds"),
-                  "event": event, **fields}
+                  "event": event, **({"session": session} if session else {}), **fields}
         line = json.dumps(record, ensure_ascii=False) + "\n"
         # One O_APPEND write() per line, so parallel writers cannot interleave
         # halves of two records into one unparseable line.

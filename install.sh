@@ -165,7 +165,7 @@ rm -rf "$DEST/$NAME/scripts/__pycache__"
 # ── the hooks ────────────────────────────────────────────────────────────────
 # Installed as a plugin, the agent picks up hooks/hooks.json by itself. Installed
 # this way there is no plugin system, so the hooks are registered in
-# settings.json directly. Two of them, and they do different jobs:
+# settings.json directly. Three of them, and they do different jobs:
 #
 #   SessionStart  tells the agent it has a memory before the first turn, which is
 #                 the whole difference between "remember to mention it" and it
@@ -173,11 +173,15 @@ rm -rf "$DEST/$NAME/scripts/__pycache__"
 #   PreToolUse    denies a hand-written page, so the validating write path is the
 #                 only way in. Without it, "writes are refused, not requested" is
 #                 itself a request: the ordinary Write tool walks around the gate.
+#   Stop          reminds a session that changed several files and recorded no
+#                 page — once, as feedback the agent acts on, not as an error.
+#                 "Write after meaningful work" was the one rule left in prose.
 if [ "$NO_HOOK" != "1" ]; then
   if [ "$SCOPE" = "project" ]; then settings="$PWD/.claude/settings.json"; else settings="$HOME/.claude/settings.json"; fi
   mkdir -p "$(dirname "$settings")"
   START_CMD="$PYTHON \"$DEST/$NAME/hooks/session_start.py\"" \
   GUARD_CMD="$PYTHON \"$DEST/$NAME/hooks/write_guard.py\"" \
+  STOP_CMD="$PYTHON \"$DEST/$NAME/hooks/session_stop.py\"" \
   SETTINGS="$settings" $PYTHON - <<'PY'
 import json, os
 from pathlib import Path
@@ -197,6 +201,7 @@ WANTED = [
      "startup|clear|compact|resume", os.environ["START_CMD"]),
     ("PreToolUse", "project-memory-write-guard",
      "Write|Edit|MultiEdit|NotebookEdit", os.environ["GUARD_CMD"]),
+    ("Stop", "project-memory-session-stop", None, os.environ["STOP_CMD"]),
 ]
 
 hooks = data.setdefault("hooks", {})
@@ -205,14 +210,14 @@ for event, managed_id, matcher, cmd in WANTED:
     entries = [e for e in hooks.get(event, [])
                if not any(h.get("_managed_id") == managed_id
                           for h in e.get("hooks", []))]
-    entries.append({
-        "matcher": matcher,
-        "hooks": [{"_managed_id": managed_id, "type": "command", "command": cmd}],
-    })
+    entry = {"hooks": [{"_managed_id": managed_id, "type": "command", "command": cmd}]}
+    if matcher:  # Stop has nothing to match on
+        entry = {"matcher": matcher, **entry}
+    entries.append(entry)
     hooks[event] = entries
 
 path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-print(f"hooks:     session-start and write-guard registered in {path}")
+print(f"hooks:     session-start, write-guard and session-stop registered in {path}")
 PY
 fi
 

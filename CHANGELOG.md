@@ -17,6 +17,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (0.986, paired +0.441 [+0.349, +0.539]). Without the flag nothing changes,
   and the existing tables did not move. Sources are not in the index, so a
   `--touching` search reads every page.
+- **A `Stop` hook for the write side.** The session-start hook closed "the agent
+  did not know it had a memory"; "write after meaningful work" stayed a rule in
+  prose, and on a small task set an agent told to read and apply memory wrote
+  nothing in ten tasks. `hooks/session_stop.py` now speaks when Claude finishes
+  a turn with three or more changed files in `git status` and no page written by
+  this session — once per session, as `additionalContext`, which Claude Code
+  delivers as feedback the agent acts on rather than a blocking error. It reads
+  the working tree, so committed work is invisible to it, and it never creates
+  a store. Registered in `hooks/hooks.json` and by `install.sh`.
+- Every log line carries the session id Claude Code exports to the Bash tool
+  (`CLAUDE_CODE_SESSION_ID`), the Stop hook records one `stop` line per turn,
+  and `memory_stats.py` reports sessions that changed the tree and recorded
+  nothing, reminders sent, and writes per session — the numbers that decide
+  whether the hook earns its place, which the log could not answer before.
 
 ## [0.2.2] - 2026-08-18
 

@@ -75,6 +75,8 @@ so plainly rather than dressing up the nearest page, then proceed from the code.
 
 Record after: an architectural decision, a non-obvious bugfix, a new domain
 concept, or a contract change. Skip: typos, reverts, formatting, test-only edits.
+If a turn ends with three or more files changed and no page written this
+session, a hook says so once; "nothing to record" is a complete answer to it.
 
 ```bash
 python3 scripts/memory_write.py --slug webgl-context-loss \
