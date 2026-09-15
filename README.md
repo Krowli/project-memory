@@ -68,7 +68,7 @@ version this project is running, because a `curl` install has no package manager
 to ask.
 
 Run it from anywhere. It installs the skill to `~/.agents/skills/`, registers the
-two hooks, and stops there — a store is not something to set up per project,
+three hooks, and stops there — a store is not something to set up per project,
 it appears at the first write and shields itself as it is created.
 
 To install into one repository instead, and commit the skill with it, add
@@ -89,10 +89,22 @@ Edit of a `.memory/*.md` page and names `memory_write.py` instead — without it
 tool walks straight around the validator. Set
 `PROJECT_MEMORY_ALLOW_HAND_EDIT=1` to repair a page by hand deliberately.
 
+A third hook closes the write side. "Write after meaningful work" was the one
+rule left in prose, and on a small task set an agent told to read and apply its
+memory wrote nothing in ten tasks. So when Claude finishes a turn having changed
+three or more files while this session's log shows no page, a `Stop` hook says
+so — once per session, as feedback the agent acts on rather than a blocking
+error, and "nothing to record" in one word is a fine answer. It reads `git
+status`, so a session that committed everything is invisible to it, and it
+attributes writes by the session id Claude Code exports to the Bash tool.
+`memory_stats.py` then reports how many sessions changed the tree and recorded
+nothing, which is the number this hook exists to move.
+
 Installed as a plugin, the agent picks up `hooks/hooks.json` itself. Installed
-over `curl` there is no plugin system, so the installer writes both hooks into
-`settings.json`, tagged `project-memory-session-start` and
-`project-memory-write-guard` so they can be found and removed.
+over `curl` there is no plugin system, so the installer writes all three hooks
+into `settings.json`, tagged `project-memory-session-start`,
+`project-memory-write-guard` and `project-memory-session-stop` so they can be
+found and removed.
 
 **On Windows, mind the interpreter name.** `python3` is not a command Windows has:
 the installer puts `python`, `py` and `pymanager` on PATH. `install.sh` resolves a
@@ -257,7 +269,8 @@ skills/project-memory/     the skill itself — this is what gets installed
                            memory_stats.py, memory_lib.py
   references/              detail loaded on demand, not at startup
   assets/                  page template
-hooks/                     session_start.py (announce), write_guard.py (enforce)
+hooks/                     session_start.py (announce), write_guard.py (enforce),
+                           session_stop.py (remind)
 evals/                     reproducible retrieval measurement: corpus, queries, scorer
 tests/                     pytest suite, stdlib only
 .memory/                   this project's own pages, tracked on purpose

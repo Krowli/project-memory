@@ -115,3 +115,16 @@ def test_store_shields_its_log_from_git(repo):
     write(repo, "--slug", "any-page", "--title", "T", "--kind", "bug", "--source", "src/real.ts")
     ignore = (repo / ".memory" / ".gitignore").read_text()
     assert memory_lib.LOG_NAME in ignore
+
+
+def test_the_session_is_recorded_when_the_harness_names_one(repo, monkeypatch):
+    """Claude Code exports the session id to the Bash tool, which is where the
+    write runs. With it in the record, "did this session write anything" is a
+    question the log can answer — and the Stop hook asks exactly that."""
+    monkeypatch.setenv(memory_lib.SESSION_ENV, "abc-123")
+    write(repo, "--slug", "in-session", "--title", "T", "--kind", "bug", "--source", "src/real.ts")
+    assert entries(repo)[-1]["session"] == "abc-123"
+
+    monkeypatch.delenv(memory_lib.SESSION_ENV)
+    write(repo, "--slug", "no-session", "--title", "T", "--kind", "bug", "--source", "src/real.ts")
+    assert "session" not in entries(repo)[-1]
