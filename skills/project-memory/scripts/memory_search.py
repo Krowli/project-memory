@@ -2,10 +2,17 @@
 """Search project memory. Prints ranked `slug — title — snippet`.
 
 Usage:  python3 memory_search.py "query words" [-k N] [--store DIR] [--json]
+                                 [--touching PATH ...]
 
 Ranking is BM25F over two fields — title (+ slug) and body. See
 references/retrieval.md for how it was chosen, what it was measured against, and
 what of that measurement is reproducible from this repository.
+
+`--touching PATH` puts the pages whose `sources` name that file (or anything
+under that directory) ahead of every lexical hit, marked in the result line. It
+may stand alone or accompany query words. Sources are not in the index, so this
+reads every page — measured, that is the scan path's cost, and it is paid only
+when the flag is given.
 
 Two retrieval paths, one ordering. A persistent SQLite FTS5 index (memory_index)
 answers when it can; when it cannot — no FTS5 in this interpreter, a read-only
@@ -19,12 +26,13 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import posixpath
 import re
 import sys
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import memory_index
@@ -164,6 +172,49 @@ def score_doc(terms: list[str], idx: Index, i: int) -> float:
     return total
 
 
+def _root_relative(raw: str, root: Path) -> str:
+    """A path as the `sources` field spells it: relative to the project root, POSIX
+    separators, no `./` or doubled slashes.
+
+    A relative path is first tried against the working directory, because the
+    agent runs the command from wherever it is standing; if nothing is there it
+    is taken literally as root-relative, which is how sources are cited.
+    """
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        try:
+            candidate = Path.cwd() / path
+        except OSError:
+            candidate = None
+        if candidate is not None and candidate.exists():
+            path = candidate
+        else:
+            return posixpath.normpath(PurePosixPath(path.as_posix()).as_posix())
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except (ValueError, OSError):
+        return path.as_posix()
+
+
+def touching(pages: list[Page], paths: list[str], root: Path) -> dict[str, list[str]]:
+    """slug → the given paths its `sources` touch.
+
+    A given file matches a source that is the same file. A given directory
+    matches every source under it — by whole path component, so `src/terminal`
+    does not match `src/terminalx/`. A file never matches its siblings: widening
+    to the directory silently would make `src/` match the whole store.
+    """
+    wanted = [_root_relative(p, root) for p in paths]
+    out: dict[str, list[str]] = {}
+    for page in pages:
+        cited = [_root_relative(str(s), root) for s in page.meta.get("sources") or []]
+        matched = [w for w in wanted
+                   if any(c == w or c.startswith(w.rstrip("/") + "/") for c in cited)]
+        if matched:
+            out[page.slug] = matched
+    return out
+
+
 def lift_superseders(hits: list[tuple[float, Page]]) -> list[tuple[float, Page]]:
     """Guarantee that a page outranks anything it superseded.
 
@@ -196,20 +247,29 @@ def lift_superseders(hits: list[tuple[float, Page]]) -> list[tuple[float, Page]]
 # formulas, so the ORDER OF THE TAIL can differ. Reporting the path is what makes
 # a disagreement between two agents in one fan-out explainable rather than spooky.
 last_path = "scan"
+# Which of the last search's hits touched a `--touching` path, and which path.
+# Module state like `last_path`, so the return type every caller relies on stays
+# `(score, page)` while the result line can still say why a page is there.
+last_touching: dict[str, list[str]] = {}
 
 
-def order(hits: list[tuple[float, Page]], k: int) -> list[tuple[float, Page]]:
+def order(hits: list[tuple[float, Page]], k: int,
+          touched: dict[str, list[str]] | None = None) -> list[tuple[float, Page]]:
     """The ordering both retrieval paths share, so they never disagree.
 
     Stable sorts applied in reverse order of precedence: score first, then the
     more recently updated page, then the slug so the order is deterministic.
     Alphabetical order used to decide which of two equally scored pages the agent
     read first, which is how a reversed decision could come out on top of the
-    decision that reversed it.
+    decision that reversed it. A page touching a `--touching` path outranks all
+    of that: the agent asked for the pages about a file, not the pages about
+    some words.
     """
     hits.sort(key=lambda sp: sp[1].slug)
     hits.sort(key=lambda sp: sp[1].updated, reverse=True)
     hits.sort(key=lambda sp: sp[0], reverse=True)
+    if touched:
+        hits.sort(key=lambda sp: sp[1].slug in touched, reverse=True)
     # Before truncation, so a replacement is not the hit that falls off the end.
     hits = lift_superseders(hits)
     return hits[:k] if k > 0 else []
@@ -238,30 +298,44 @@ def _from_index(query: str, store: Path, k: int) -> list[tuple[float, Page]] | N
     return order(hits, k)
 
 
-def _from_scan(query: str, store: Path, k: int) -> list[tuple[float, Page]]:
+def _from_scan(query: str, store: Path, k: int,
+               paths: list[str] | None = None) -> list[tuple[float, Page]]:
     """Read every page and rank in process. Slower at every corpus size, and it
-    cannot be stale, so it is what every failure of the index falls back to."""
+    cannot be stale, so it is what every failure of the index falls back to —
+    and the only path that can honour `--touching`, since the index does not
+    carry `sources`. A touching page is kept at score 0: sharing no word with
+    the query is not a reason to hide the page about the file."""
+    global last_touching
     terms = tokenize(query)
     pages = load_pages(store)
     if not pages:
         return []
     idx = build_index(pages)
+    touched = touching(pages, paths, store.parent) if paths else {}
+    last_touching = touched
     hits = [(s, idx.pages[i]) for i in range(idx.n_docs)
-            if (s := score_doc(terms, idx, i)) > 0]
-    return order(hits, k)
+            if (s := score_doc(terms, idx, i) if terms else 0.0) > 0
+            or idx.pages[i].slug in touched]
+    return order(hits, k, touched)
 
 
-def search(query: str, store: Path, k: int = 10) -> list[tuple[float, Page]]:
+def search(query: str, store: Path, k: int = 10,
+           touching: list[str] | None = None) -> list[tuple[float, Page]]:
+    global last_path, last_touching
+    last_touching = {}
     terms = tokenize(query)
-    if not terms:
+    paths = [p for p in (touching or []) if p.strip()]
+    if not terms and not paths:
         return []
 
-    global last_path
-    hits = _from_index(query, store, k)
+    if paths:
+        hits = None  # sources live only in the markdown, so the index cannot answer
+    else:
+        hits = _from_index(query, store, k)
     last_path = "index"
     if hits is None:
         last_path = "scan"
-        hits = _from_scan(query, store, k)
+        hits = _from_scan(query, store, k, paths)
 
     # Logged including the misses: a query that returns nothing is the strongest
     # signal there is, both about the corpus and about ranking. This is the same
@@ -269,7 +343,8 @@ def search(query: str, store: Path, k: int = 10) -> list[tuple[float, Page]]:
     # than invented ones. A search never creates the store — a read-only
     # operation must not dirty a working tree that never opted in.
     log_event(store, "search", query=query, hits=len(hits),
-              top=hits[0][1].slug if hits else None)
+              top=hits[0][1].slug if hits else None,
+              **({"touching": paths} if paths else {}))
     return hits
 
 
@@ -308,6 +383,8 @@ def snippet(page: Page, width: int = 140, query: str = "") -> str:
 def format_hit(score: float, page: Page, query: str = "") -> str:
     line = (f"{page.slug}  —  {page.title}  —  {snippet(page, query=query)}   "
             f"[{score:.1f}] {page.updated}")
+    if page.slug in last_touching:
+        line += f"  ▸ touches {', '.join(last_touching[page.slug])}"
     if page.superseded_by:
         line += f"  ⚠ superseded by {page.superseded_by}"
     return line
@@ -317,21 +394,27 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Search project memory.")
     ap.add_argument("--version", action="version",
                     version=f"project-memory {VERSION} ({Path(__file__).resolve().parent.parent})")
-    ap.add_argument("query", nargs="+")
+    ap.add_argument("query", nargs="*")
     ap.add_argument("-k", type=int, default=10, help="max results (default 10)")
     ap.add_argument("--store", type=Path, default=None)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--touching", action="append", default=[], metavar="PATH",
+                    help="put pages whose sources name this file, or anything under "
+                         "this directory, first; repeatable; may replace the query")
     args = ap.parse_args(argv)
+    if not args.query and not args.touching:
+        ap.error("give query words, --touching PATH, or both")
 
     store = args.store or find_store()
     query = " ".join(args.query)
-    hits = search(query, store, args.k)
+    hits = search(query, store, args.k, args.touching)
 
     if args.json:
         print(json.dumps(
             {"served_by": last_path,
              "hits": [{"slug": p.slug, "title": p.title, "score": round(s, 3),
                        "updated": p.updated, "superseded_by": p.superseded_by,
+                       "touching": last_touching.get(p.slug, []),
                        "path": str(p.path)} for s, p in hits]},
             ensure_ascii=False, indent=2))
     elif not hits:

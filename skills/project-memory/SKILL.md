@@ -34,6 +34,19 @@ a full page with `cat <store>/<slug>.md`, using the path from the header line so
 it works from any directory. Two or three searches with different wording beats
 one long query.
 
+About to change a file? Ask for the pages written against it, with or without
+query words — they come first, marked `▸ touches <path>`, even when their text
+shares no word with your query:
+
+```bash
+python3 scripts/memory_search.py --touching src/terminal/renderer.ts
+python3 scripts/memory_search.py "context lost" --touching src/terminal/
+```
+
+A file matches pages citing that file; a directory matches everything under it.
+Measured on the evaluation corpus, typing the path as words puts the right page
+first 38% of the time; `--touching` puts it first by construction.
+
 The trigger is the kind of claim you are about to make, not the wording of the
 question. "How does X work", "explain the architecture", "what does this app
 do" and "what do you know about this project" are all memory questions: the

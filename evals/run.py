@@ -45,7 +45,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from methods import METHODS  # noqa: E402
+from methods import METHODS, TOUCHING_METHODS  # noqa: E402
 
 BOOTSTRAP = 1000
 SEED = 20260817
@@ -201,6 +201,7 @@ def main(argv=None) -> int:
     known = data["known_item"]
     ambiguous = data["ambiguous"]
     unanswerable = data["unanswerable"]
+    touching = data.get("touching", [])
 
     with tempfile.TemporaryDirectory() as tmp:
         store = materialise(corpus, Path(tmp))
@@ -221,6 +222,21 @@ def main(argv=None) -> int:
             for other in METHODS if other != shipped
         }
         results["_calibration"] = calibration(corpus, store, known, unanswerable)
+        # The file the agent is editing, given as words and given as a path. The
+        # relevant set is every page citing the file, so the second row is close
+        # to the ceiling by construction; the first row is what today costs.
+        touch_per_query = {name: [ndcg_at(method(q["q"], corpus, store), set(q["relevant"]))
+                                  for q in touching]
+                           for name, method in TOUCHING_METHODS.items()}
+        results["_touching"] = {
+            "n": len(touching),
+            "methods": {name: evaluate(method, corpus, store, touching)
+                        for name, method in TOUCHING_METHODS.items()},
+            "delta": dict(zip(("mean", "low", "high"),
+                              paired_delta(touch_per_query["--touching path"],
+                                           touch_per_query["path as text query"])))
+            if touching else {},
+        }
 
     if args.json:
         print(json.dumps(results, indent=2, ensure_ascii=False))
@@ -260,6 +276,18 @@ def main(argv=None) -> int:
           f"unanswerable {cal['score']['unanswerable_median']:.2f}")
     print(f"  coverage  answerable {cal['coverage']['answerable_median']:.2f}   "
           f"unanswerable {cal['coverage']['unanswerable_median']:.2f}")
+
+    touch = results["_touching"]
+    if touch["n"]:
+        print(f"\ntouching queries ({touch['n']}): the agent knows the file, not the words")
+        for name, r in touch["methods"].items():
+            k = r["known_item"] if "known_item" in r else r
+            print(f"  {name:24} nDCG@10 {k['ndcg@10']:.3f}  "
+                  f"[{k['ci'][0]:.3f},{k['ci'][1]:.3f}]  R@1 {k['recall@1']:.3f}")
+        d = touch["delta"]
+        verdict = "significant" if (d["low"] > 0 or d["high"] < 0) else "NOT significant"
+        print(f"  --touching vs text, paired  {d['mean']:+.3f}  "
+              f"[{d['low']:+.3f},{d['high']:+.3f}]  {verdict}")
 
     if args.by_type:
         scored = {n: r for n, r in results.items() if not n.startswith("_")}

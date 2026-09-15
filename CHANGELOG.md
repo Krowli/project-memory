@@ -6,6 +6,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`memory_search.py --touching PATH`** — the pages whose `sources` cite that
+  file, or anything under that directory, come first, marked `▸ touches <path>`,
+  with or without query words. `sources` was the one field every page must carry
+  and the one field ranking never read. Measured on a new 50-query `touching`
+  set in `evals/corpus.json`: typing the path as words puts the right page first
+  38% of the time (nDCG@10 0.545); the flag puts it first by construction
+  (0.986, paired +0.441 [+0.349, +0.539]). Without the flag nothing changes,
+  and the existing tables did not move. Sources are not in the index, so a
+  `--touching` search reads every page.
+
 ## [0.2.2] - 2026-08-18
 
 ### Fixed

@@ -94,7 +94,7 @@ def build_context() -> str:
         "substitute: they carry instructions, not reasons, and they drift. Having "
         "them in context is not a reason to skip the search. Give several words, "
         "they are ranked:\n"
-        f"  python3 {search} \"terminal freeze webgl context lost\"\n"
+        f"  python3 {search} \"terminal freeze webgl context lost\" [--touching <file>]\n"
         "No search for mechanical work — a command, a typo, a rename, a file the "
         "user named — or for general programming questions.\n\n"
         "WRITE after solving something non-obvious — a cause far from its symptom, "

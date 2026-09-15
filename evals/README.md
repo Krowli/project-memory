@@ -25,6 +25,13 @@ answers. A ranked list invites false confidence: the interface always returns
 share of these queries that got any hit at all — lower is better, and no amount of
 ranking quality compensates for it.
 
+**Touching queries.** Fifty source paths, one per page, each relevant to every
+page that cites it. This is the agent that knows which file it is editing rather
+than which words a page used, and it measures `--touching` against typing the
+path as words. The relevant set is defined by the citation, so the flag's row is
+near the ceiling by construction; the informative row is the baseline, which is
+what today costs. See `references/retrieval.md`.
+
 ## Methods compared
 
 | method | what it stands for |

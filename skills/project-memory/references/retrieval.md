@@ -89,6 +89,35 @@ A note on measuring it: `fastembed` does not normalise this model's output
 much as by meaning. The first run of this probe did exactly that and reported the
 hybrid gain as *not* significant. The correction is in the script.
 
+### Searching by file: `--touching`
+
+Every page must cite the files it is about, and until 0.2.2 ranking never read
+that field. An agent about to change `src/terminal/renderer.ts` could only type
+the path as words — which tokenises to `src terminal renderer ts`, terms that
+score on every page under `src/terminal/`. `evals/corpus.json` carries a
+`touching` set for this: 50 source paths taken one per page, each relevant to
+every page that cites it (29 paths cite one page, 21 cite two to seven).
+
+| the path given as | nDCG@10 | R@1 |
+|---|---|---|
+| query words | 0.545 [0.450, 0.638] | 0.380 |
+| `--touching` | **0.986** [0.965, 1.000] | 0.960 |
+
+Paired: **+0.441 [+0.349, +0.539]**. Read the second row for what it is — the
+relevant set is *defined* by the citation, so a flag that puts cited pages first
+is close to the ceiling by construction. The row worth having is the first: the
+right page comes first for 38% of path queries today, and the number is not
+recoverable from words because 77 of the 90 pages never mention a source file's
+name in title or body. The two queries short of 1.0 are a superseded page whose
+replacement cites a different file; the replacement is lifted above it, as
+everywhere else, and the marker on the old page says why.
+
+`--touching` orders the pages that cite the file (or anything under the
+directory) first, by score within the group, and leaves everything else exactly
+as it was: no flag, no change, and the table above did not move. Sources are not
+in the FTS5 index, so a `--touching` search reads every page — the scan path's
+cost, paid only when asked for.
+
 ### The historical figures
 
 An earlier version of this document argued the design from a private measurement:

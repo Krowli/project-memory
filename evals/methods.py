@@ -163,6 +163,12 @@ def fts5_our_tokens(query: str, corpus, store: Path) -> list[str]:
     return [r[0] for r in rows]
 
 
+def touching(query: str, corpus, store: Path) -> list[str]:
+    """The same path handed over as `--touching` instead of as words. Only
+    meaningful on the `touching` query set, where the query IS a source path."""
+    return [page.slug for _, page in memory_search.search(query, store, k=10, touching=[query])]
+
+
 METHODS = {
     "shipped (fts5 index)": shipped,
     "shipped fallback (scan)": fallback_scan,
@@ -170,4 +176,12 @@ METHODS = {
     "term count (previous)": term_count,
     "fts5 on raw text": fts5,
     "grep -rilE (unranked)": grep_or,
+}
+
+# The agent knows which file it is editing, not which words the page used. Kept
+# apart from METHODS: on word queries `--touching` is not a method, it is a flag
+# nobody passed, so a row in the main table would measure nothing.
+TOUCHING_METHODS = {
+    "path as text query": shipped,
+    "--touching path": touching,
 }

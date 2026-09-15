@@ -2986,5 +2986,392 @@
   "how are plugins distributed — is there a registry, and how do I publish one",
   "how is the font fallback chain chosen when the primary font has no glyph for a codepoint",
   "can I point sync at my own S3 bucket or self-host the sync backend"
+ ],
+ "touching": [
+  {
+   "q": "src/terminal/renderer/select.ts",
+   "type": "touching",
+   "relevant": [
+    "render-canvas-default-renderer",
+    "render-webgl-default-renderer",
+    "render-ligatures-enabled-by-default",
+    "render-renderer-diagnostics"
+   ]
+  },
+  {
+   "q": "src/terminal/renderer/webgl.ts",
+   "type": "touching",
+   "relevant": [
+    "render-webgl-default-renderer",
+    "render-ligatures-opt-in",
+    "render-atlas-eviction-thrash",
+    "render-context-loss-after-sleep"
+   ]
+  },
+  {
+   "q": "src/terminal/ligatures.ts",
+   "type": "touching",
+   "relevant": [
+    "render-ligatures-enabled-by-default",
+    "render-ligatures-opt-in"
+   ]
+  },
+  {
+   "q": "src/terminal/selection.ts",
+   "type": "touching",
+   "relevant": [
+    "render-ligatures-opt-in"
+   ]
+  },
+  {
+   "q": "src/terminal/renderer/atlas.ts",
+   "type": "touching",
+   "relevant": [
+    "render-atlas-eviction-thrash",
+    "render-atlas-theme-invalidation"
+   ]
+  },
+  {
+   "q": "src/terminal/theme/apply.ts",
+   "type": "touching",
+   "relevant": [
+    "render-atlas-theme-invalidation",
+    "render-theme-palette-contrast"
+   ]
+  },
+  {
+   "q": "src/terminal/pane.tsx",
+   "type": "touching",
+   "relevant": [
+    "render-context-loss-after-sleep",
+    "render-reflow-marker-drift",
+    "render-scrollback-cap",
+    "render-fractional-dpr-blur",
+    "render-webfont-measure-race",
+    "render-background-pane-throttle",
+    "pty-sigwinch-resize-coalescing"
+   ]
+  },
+  {
+   "q": "src/terminal/marks.ts",
+   "type": "touching",
+   "relevant": [
+    "render-reflow-marker-drift"
+   ]
+  },
+  {
+   "q": "src/terminal/scrollback/journal.ts",
+   "type": "touching",
+   "relevant": [
+    "render-scrollback-cap"
+   ]
+  },
+  {
+   "q": "src/terminal/theme/palette.ts",
+   "type": "touching",
+   "relevant": [
+    "render-theme-palette-contrast"
+   ]
+  },
+  {
+   "q": "src/terminal/measure.ts",
+   "type": "touching",
+   "relevant": [
+    "render-fractional-dpr-blur",
+    "render-webfont-measure-race"
+   ]
+  },
+  {
+   "q": "crates/pty/src/resize.rs",
+   "type": "touching",
+   "relevant": [
+    "render-webfont-measure-race",
+    "pty-sigwinch-resize-coalescing"
+   ]
+  },
+  {
+   "q": "src/terminal/renderer/schedule.ts",
+   "type": "touching",
+   "relevant": [
+    "render-background-pane-throttle"
+   ]
+  },
+  {
+   "q": "src/terminal/unicode/width.ts",
+   "type": "touching",
+   "relevant": [
+    "render-wide-char-width-table"
+   ]
+  },
+  {
+   "q": "src/terminal/devtools/overlay.tsx",
+   "type": "touching",
+   "relevant": [
+    "render-renderer-diagnostics"
+   ]
+  },
+  {
+   "q": "crates/pty/src/reap.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-reap-sigchld-selfpipe",
+    "pty-reap-dedicated-wait-thread"
+   ]
+  },
+  {
+   "q": "crates/updater/src/verify.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-reap-dedicated-wait-thread",
+    "sync-updater-bsdiff-patches",
+    "sync-updater-signature-chain",
+    "platform-updater-signature-key-rotation"
+   ]
+  },
+  {
+   "q": "crates/pty/src/env.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-env-inherit-full-parent",
+    "pty-env-login-shell-snapshot"
+   ]
+  },
+  {
+   "q": "crates/agents/src/spawn.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-env-login-shell-snapshot"
+   ]
+  },
+  {
+   "q": "crates/pty/src/exit.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-exit-status-signal-encoding",
+    "pty-eof-drain-race-lost-output"
+   ]
+  },
+  {
+   "q": "crates/pty/src/win/conpty.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-conpty-exit-259-still-active",
+    "pty-conpty-vs-unix-pty-differences",
+    "pty-windows-conhost-orphan-jobobject"
+   ]
+  },
+  {
+   "q": "crates/pty/src/lifecycle.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-zombie-defunct-after-pane-close"
+   ]
+  },
+  {
+   "q": "crates/pty/src/lib.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-conpty-vs-unix-pty-differences"
+   ]
+  },
+  {
+   "q": "crates/pty/src/integration/mod.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-shell-integration-osc133-injection"
+   ]
+  },
+  {
+   "q": "crates/pty/src/shutdown.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-graceful-shutdown-sighup-sigterm-sigkill"
+   ]
+  },
+  {
+   "q": "crates/pty/src/spawn_unix.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-setsid-controlling-terminal",
+    "pty-master-fd-cloexec-leak"
+   ]
+  },
+  {
+   "q": "crates/pty/src/reader.rs",
+   "type": "touching",
+   "relevant": [
+    "render-scrollback-cap",
+    "pty-eof-drain-race-lost-output"
+   ]
+  },
+  {
+   "q": "crates/pty/src/openpt.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-master-fd-cloexec-leak"
+   ]
+  },
+  {
+   "q": "crates/pty/src/win/job.rs",
+   "type": "touching",
+   "relevant": [
+    "pty-windows-conhost-orphan-jobobject"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/schema.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-layout-json-blob",
+    "persist-agent-panes-restored-inert"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/migrations/0011_normalize_panes.sql",
+   "type": "touching",
+   "relevant": [
+    "persist-layout-normalized-tables"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/open.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-wal-disabled-network-home",
+    "persist-wal-local-state-dir",
+    "persist-migration-advisory-lock",
+    "persist-corrupt-db-quarantine"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/paths.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-wal-local-state-dir"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/migrations/mod.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-migration-downgrade-guard",
+    "persist-migration-advisory-lock"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/actor.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-single-writer-actor"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/recovery.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-crash-recovery-marker",
+    "persist-corrupt-db-quarantine"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/checkpoint.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-wal-checkpoint-starvation"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/pragmas.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-wal-disabled-network-home",
+    "persist-synchronous-normal-tradeoff"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/scrollback.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-scrollback-outside-sqlite"
+   ]
+  },
+  {
+   "q": "crates/agent-orchestrator/src/restore.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-agent-panes-restored-inert"
+   ]
+  },
+  {
+   "q": "crates/session-store/Cargo.toml",
+   "type": "touching",
+   "relevant": [
+    "persist-bundled-sqlite-pin"
+   ]
+  },
+  {
+   "q": "crates/session-store/src/migrations/0014_incremental_vacuum.rs",
+   "type": "touching",
+   "relevant": [
+    "persist-incremental-vacuum-idle"
+   ]
+  },
+  {
+   "q": "src/agents/orchestrator/spawn.ts",
+   "type": "touching",
+   "relevant": [
+    "agents-pane-spawn-contract"
+   ]
+  },
+  {
+   "q": "src/agents/orchestrator/scheduler.ts",
+   "type": "touching",
+   "relevant": [
+    "agents-max-parallel-fixed-four"
+   ]
+  },
+  {
+   "q": "crates/agent-supervisor/src/admission.rs",
+   "type": "touching",
+   "relevant": [
+    "agents-admission-by-memory-pressure"
+   ]
+  },
+  {
+   "q": "crates/agent-supervisor/src/worktree.rs",
+   "type": "touching",
+   "relevant": [
+    "agents-worktree-per-run",
+    "agents-worktree-node-modules-deps"
+   ]
+  },
+  {
+   "q": "scripts/prepare-worktree.mjs",
+   "type": "touching",
+   "relevant": [
+    "agents-worktree-node-modules-deps"
+   ]
+  },
+  {
+   "q": "crates/agent-supervisor/src/stream/coalesce.rs",
+   "type": "touching",
+   "relevant": [
+    "agents-stdout-frame-coalescing"
+   ]
+  },
+  {
+   "q": "crates/agent-supervisor/src/proc/kill.rs",
+   "type": "touching",
+   "relevant": [
+    "agents-cancel-signal-escalation"
+   ]
+  },
+  {
+   "q": "crates/agent-supervisor/src/power.rs",
+   "type": "touching",
+   "relevant": [
+    "agents-suspend-on-system-sleep"
+   ]
+  }
  ]
 }
