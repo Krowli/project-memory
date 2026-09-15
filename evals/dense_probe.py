@@ -2,11 +2,21 @@
 """Optional probe: is the store's lexical ranking leaving quality on the table?
 
     /path/to/venv/bin/python evals/dense_probe.py
+    /path/to/venv/bin/python evals/dense_probe.py --static minishlab/potion-base-8M
 
-Not part of `run.py`, and deliberately not a dependency: it needs `fastembed` and
-downloads a model, which the skill itself never does. It exists because the
-decision to stay lexical is the most load-bearing one in the project and the
-figures behind it came from a corpus nobody else can see.
+Not part of `run.py`, and deliberately not a dependency: it needs `fastembed`
+(or, with `--static`, `model2vec`) and downloads a model, which the skill itself
+never does. It exists because the decision to stay lexical is the most
+load-bearing one in the project and the figures behind it came from a corpus
+nobody else can see.
+
+`--static` swaps the transformer for a model2vec static-embedding model — a
+token-to-vector table with no torch and no ONNX runtime. The hybrid was refused
+on cost, not quality (`references/retrieval.md`), and a static model is the
+cheapest form the idea can take; if it does not clear the cost bar, the cheap
+version of the idea is ruled out, not the idea. Alongside quality this reports
+what the cost objection is actually about: a cold process to one query vector,
+wall clock and peak RSS, next to the cold shipped search on the same store.
 
 It measures three things on the same corpus and queries as `run.py`:
 
@@ -20,8 +30,11 @@ and where embeddings are supposed to win.
 """
 from __future__ import annotations
 
+import argparse
 import math
+import resource
 import statistics
+import subprocess
 import sys
 import tempfile
 import time
@@ -48,19 +61,54 @@ def rrf(*rankings: list[str], k: int = RRF_K) -> list[str]:
     return sorted(scored, key=lambda s: -scored[s])[:10]
 
 
+def cold_process(argv: list[str]) -> tuple[float, float]:
+    """Wall clock and peak RSS of one fresh process — what the skill pays per
+    search, since it is a script run afresh each time."""
+    before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+    t = time.perf_counter()
+    subprocess.run(argv, capture_output=True, check=True)
+    wall = time.perf_counter() - t
+    rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+    # macOS reports bytes, Linux kilobytes.
+    scale = 1.0 if sys.platform == "darwin" else 1024.0
+    return wall, max(rss, before) * scale / 1e6
+
+
 def main() -> int:
-    try:
-        from fastembed import TextEmbedding
-    except ImportError:
-        print("needs fastembed: pip install fastembed", file=sys.stderr)
-        return 2
+    ap = argparse.ArgumentParser(description="dense and hybrid retrieval, measured")
+    ap.add_argument("--static", metavar="MODEL", default=None,
+                    help="a model2vec static model instead of fastembed's MiniLM")
+    args = ap.parse_args()
 
     data = harness.load_corpus()
     corpus, queries = data["pages"], data["known_item"]
 
-    t = time.perf_counter()
-    model = TextEmbedding(model_name=MODEL)
-    load = time.perf_counter() - t
+    if args.static:
+        try:
+            from model2vec import StaticModel
+        except ImportError:
+            print("needs model2vec: pip install model2vec", file=sys.stderr)
+            return 2
+        model_name = args.static
+        t = time.perf_counter()
+        static = StaticModel.from_pretrained(model_name)
+        load = time.perf_counter() - t
+        embed_docs = embed_queries = static.encode
+        one_vector = (f"from model2vec import StaticModel as M; "
+                      f"M.from_pretrained({model_name!r}).encode(['q'])")
+    else:
+        try:
+            from fastembed import TextEmbedding
+        except ImportError:
+            print("needs fastembed: pip install fastembed", file=sys.stderr)
+            return 2
+        model_name = MODEL
+        t = time.perf_counter()
+        model = TextEmbedding(model_name=model_name)
+        load = time.perf_counter() - t
+        embed_docs, embed_queries = model.embed, model.query_embed
+        one_vector = (f"from fastembed import TextEmbedding as M; "
+                      f"list(M(model_name={model_name!r}).query_embed(['q']))")
 
     def unit(vec):
         # fastembed does not normalise this model's output — measured norms of 3.4
@@ -72,15 +120,19 @@ def main() -> int:
     docs = [f"{p['title']}\n{p['body']}" for p in corpus]
     slugs = [p["slug"] for p in corpus]
     t = time.perf_counter()
-    doc_vecs = [unit(v) for v in model.embed(docs)]
+    doc_vecs = [unit(v) for v in embed_docs(docs)]
     index_build = time.perf_counter() - t
 
     t = time.perf_counter()
-    query_vecs = [unit(v) for v in model.query_embed([q["q"] for q in queries])]
+    query_vecs = [unit(v) for v in embed_queries([q["q"] for q in queries])]
     per_query_embed = (time.perf_counter() - t) / len(queries)
 
     with tempfile.TemporaryDirectory() as tmp:
         store = harness.materialise(corpus, Path(tmp))
+        search_script = Path(memory_search.__file__).resolve()
+        cold_search = cold_process([sys.executable, str(search_script), "--store", str(store),
+                                    "terminal", "freeze", "webgl"])
+        cold_vector = cold_process([sys.executable, "-c", one_vector])
         results = {"dense": [], "hybrid": [], "shipped": []}
         by_type = {name: {} for name in results}
 
@@ -97,9 +149,12 @@ def main() -> int:
                 results[name].append(value)
                 by_type[name].setdefault(item.get("type", "other"), []).append(value)
 
-    print(f"model {MODEL}")
-    print(f"  load {load:.1f}s | embed {len(corpus)} pages {index_build:.1f}s | "
-          f"per query {per_query_embed * 1000:.0f} ms\n")
+    print(f"model {model_name}")
+    print(f"  load {load * 1000:.0f} ms | embed {len(corpus)} pages {index_build * 1000:.0f} ms | "
+          f"per query {per_query_embed * 1000:.1f} ms")
+    print(f"  cold process to one query vector {cold_vector[0] * 1000:.0f} ms, "
+          f"peak RSS {cold_vector[1]:.0f} MB | cold shipped search "
+          f"{cold_search[0] * 1000:.0f} ms, peak RSS {cold_search[1]:.0f} MB\n")
 
     types = sorted(by_type["shipped"])
     head = f"{'method':10} {'nDCG@10':>8} {'vs shipped, paired':>26}" + \

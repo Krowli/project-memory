@@ -89,6 +89,37 @@ A note on measuring it: `fastembed` does not normalise this model's output
 much as by meaning. The first run of this probe did exactly that and reported the
 hybrid gain as *not* significant. The correction is in the script.
 
+### Static embeddings, the cheap form of the idea — also refused
+
+The cost objection above is the transformer's: a gigabyte resident and a second
+to load. Static embeddings (model2vec's `potion` models: a token-to-vector table,
+no torch, no ONNX) are the cheapest form a dense signal can take, so
+`dense_probe.py --static MODEL` runs the same hybrid over them. Bar to clear,
+set before running: a hybrid gain of at least +0.03 nDCG@10 with an interval
+clear of zero, and a cold process to one query vector under ~200 ms.
+
+| model | on disk | hybrid vs shipped, paired | cold process to a vector | peak RSS |
+|---|---|---|---|---|
+| `potion-base-8M` (English) | 30 MB | +0.031 [−0.002, +0.063] | **527 ms** | 143 MB |
+| `potion-retrieval-32M` (English) | 129 MB | +0.029 [−0.002, +0.063] | 585 ms | 355 MB |
+| `potion-multilingual-128M` | 512 MB | +0.012 [−0.019, +0.042] | 2 218 ms | 1 842 MB |
+| shipped search, whole, cold | — | — | 86 ms | 26 MB |
+
+Every row fails both halves of the bar: no interval is clear of zero, and the
+cheapest cold start is six times the whole shipped search. The table itself
+loads in tens of milliseconds; the ~500 ms is importing numpy, tokenizers and
+safetensors, which is the floor for any Python embedding model and is what a
+per-search script pays. So the process model rules out the cheap version of
+the idea too, not only the expensive one — and the quality it would buy here is
+smaller than the transformer's +0.046, not larger.
+
+Two smaller findings. Dense-only with `potion-base-8M` scores 0.452 on
+paraphrase, better than MiniLM's 0.347, so the static model is not the weak
+link — the whole-page embedding is. And the multilingual model, the one that
+matches this store's bilingual claim, is the worst of the three on every column
+(0.394 on paraphrase) at twelve times the memory: multilingual vocabulary is
+paid for in the English rows.
+
 ### The historical figures
 
 An earlier version of this document argued the design from a private measurement:
