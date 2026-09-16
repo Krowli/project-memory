@@ -67,7 +67,7 @@ not about this codebase.
 **A result list is not evidence that an answer exists.** Search almost never comes
 back empty: any page sharing a word with the query scores above zero, and measured
 on the evaluation corpus, the top hit for a question the store genuinely cannot
-answer scores the same as for one it can (5.29 against 5.32). Read the hits and
+answer scores the same as for one it can (8.73 against 9.93). Read the hits and
 judge them on what they say. When nothing there actually answers the question, say
 so plainly rather than dressing up the nearest page, then proceed from the code.
 

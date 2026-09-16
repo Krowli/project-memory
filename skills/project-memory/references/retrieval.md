@@ -243,8 +243,8 @@ indistinguishable from one it can.
 
 | median of the top hit | answerable | unanswerable |
 |---|---|---|
-| BM25F score | 5.32 | 5.29 |
-| share of query words present | 0.60 | 0.56 |
+| BM25F score | 9.93 | 8.73 |
+| share of query words present | 0.58 | 0.56 |
 
 A cutoff at any score that removes a meaningful share of the unanswerable set
 removes more of the answerable one. Requiring 60% of the query's words to appear

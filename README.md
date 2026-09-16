@@ -3,9 +3,11 @@
 Durable project memory for coding agents: decisions, contracts and bug
 post-mortems as **markdown pages on disk**, searchable without a server.
 
-No server, no daemon, no API key. The store is a `.memory/` directory of `.md`
-files — greppable, diffable, reviewable in a pull request, and readable by any
-agent or human. The runtime is Python 3.11+ standard library only.
+No server, no daemon, no API key, no hooks. The store is a `.memory/` directory
+of `.md` files — greppable, diffable, reviewable in a pull request, and readable
+by any agent or human. The runtime is Python 3.11+ standard library only, and
+the same scripts run under Claude Code, Codex, Cursor, Gemini CLI, Kimi and
+anything else that can run a shell command.
 
 Search keeps a SQLite FTS5 index as a **cache**, in your cache directory rather
 than in the store, and never in git. Delete it whenever you like: it rebuilds
@@ -20,10 +22,24 @@ decisions that were reversed months ago. A memory store fixes that only if it is
 cheap to write, cheap to read, and survives switching tools. Plain markdown in
 git satisfies all three.
 
-## Install
+## Install: once per machine, or once per project
+
+Two separate things get placed, and they have different scopes:
+
+| | what it is | scope | where |
+|---|---|---|---|
+| **the skill** | code: the scripts and `SKILL.md` | **global** by default, once per machine; or local, committed with one repository | `~/.agents/skills/project-memory/` (global) or `<repo>/.agents/skills/project-memory/` (local) |
+| **the store** | your notes | **always per project** | `<repo>/.memory/` |
+
+The skill is one program and you install it once. The store is per project and
+you never install it: it appears in a project the first time an agent writes
+there, and is added to that project's `.gitignore` at that moment.
+
+### Global: through your agent's plugin system
 
 Each agent has its own plugin format, so this repository ships a manifest for
-each one. Use your agent's native command.
+each one. Use your agent's native command; every one of these installs for
+every project you will ever open.
 
 **Claude Code**
 ```
@@ -48,120 +64,101 @@ gemini extensions install https://github.com/Krowli/project-memory
 /plugins install https://github.com/Krowli/project-memory
 ```
 
-**Anything else** — one command, once, for every project you will ever open:
+**Anything else** — one command, once:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Krowli/project-memory/main/install.sh | bash
 ```
 
 It installs the **latest released tag**, not the tip of `main`, so the version it
 prints means something and two people running it on the same day get the same
-code. `PROJECT_MEMORY_REF=main` takes the branch instead.
+code. `PROJECT_MEMORY_REF=main` takes the branch instead. It places the skill in
+`~/.agents/skills/`, which Codex and Cursor read natively, symlinks it into
+`~/.claude/skills/` for Claude Code, verifies the scripts run, and stops. It
+touches no agent's settings.
 
 To update, run the same command again. To see whether that is worth doing:
 
 ```bash
-./install.sh --check      # installed: 0.2.0 / latest: v0.2.0 / update: up to date
+./install.sh --check      # installed: 0.2.2 / latest: v0.3.0 / update: available
 ```
 
-Every script also answers `--version`, because a `curl` install has no package
-manager to ask.
+Every script also answers `--version`.
 
-Run it from anywhere. It installs the skill to `~/.agents/skills/` and stops
-there — it touches no agent's settings, and a store is not something to set up
-per project: it appears at the first write and shields itself as it is created.
+### Local: committed with one repository
 
-To install into one repository instead, and commit the skill with it, add
-`--project`.
+```bash
+cd your-project
+curl -fsSL https://raw.githubusercontent.com/Krowli/project-memory/main/install.sh | bash -s -- --project
+```
 
-### One path for every agent
+This puts the skill in `<repo>/.agents/skills/project-memory/` so it travels
+with the repository, and — because it is now standing in a project — asks where
+the store should live:
 
-There are no hooks. Earlier versions carried three Claude Code hooks — one to
-announce the memory at session start, one to deny a hand-written page, one to
-remind a session that changed files and wrote nothing — and every one of them
-existed on one harness. Codex, Gemini, Cursor, Kimi, Copilot and the rest got
-the manifests and the prose. A mechanism one agent has is not a mechanism, so
-each guarantee now lives where every agent can see it:
+| mode | where | who can read it |
+|---|---|---|
+| `gitignored` *(default)* | `.memory/` in the project, added to `.gitignore` | only this machine |
+| `tracked` | `.memory/` in the project, committed | anyone with repo access |
+| `home` | `~/.project-memory/<project>/`, symlinked as `.memory/` | only this machine, and it cannot be committed by accident |
 
-- **The agent learns it has a memory** the way it learns any skill exists: the
-  `description` in `SKILL.md`, which every harness that discovers skills shows
-  the model at session start, plus the manifest-declared context files where a
-  harness has them (`GEMINI.md`, Kimi's `sessionStart.skill`) and the
-  [`AGENTS.md`](AGENTS.md) snippet for the rest. This is how superpowers, the
-  most widely installed skills library, runs on Codex, Devin and Grok, and it
-  removed its own Codex hook because the native skill index worked better —
-  the survey is in `docs/research/superpowers-portability.md`.
-- **The write gate runs on read.** `memory_search.py` applies the writer's
-  floor to whatever it finds: a page under 200 characters that matched the
-  query is not ranked and is named, so it can be rewritten through
-  `memory_write.py`; a page with no sources is shown but marked. A page can
-  arrive around the script on any agent, and search runs on every one.
-- **Writing after work is a rule, not a reminder.** `SKILL.md` and the pointer
-  files say when to write and when to say there is nothing to record.
-  `memory_stats.py` reports how many sessions searched and never wrote, from
-  the session id the scripts stamp into the log, so whether the rule is
-  followed is a number rather than an impression.
+Pass `--store <mode>` to skip the question, or `--no-store` to install the skill
+and nothing else. With no terminal to ask on — a pipeline, CI, a container — it
+takes `gitignored` rather than guessing, because the mistake it prevents is
+one-way: notes pushed to a remote cannot be unpublished. Choose `tracked`
+deliberately, when you want the record reviewed in pull requests and shared
+with the team, and you are confident nothing sensitive will land in it.
 
-Whether an agent actually searches when nobody reminds it is the one thing none
-of this can guarantee, on any harness — superpowers' porting guide says the same
-and makes an acceptance run the only proof. `evals/acceptance.py` is that run
-here: a real session of the agent you name, a question only the store answers,
-and a check of the store's log for the search. Run it per harness before
-claiming the harness is supported. Run on 2026-09-16 with no pointer file in
-the project: Claude Code searched twice before answering, Codex CLI searched
-once and followed the `superseded by` marker to the reversal. One run each;
-the other harnesses are unmeasured.
+At runtime the scripts resolve the store as `$PROJECT_MEMORY_DIR` if set,
+otherwise the nearest `.memory/` walking up from the working directory — so the
+`home` mode's symlink works with no extra configuration.
+
+## Make it automatic: one paste per agent
+
+There are no hooks. Earlier versions carried three Claude Code hooks — announce
+the memory at session start, deny a hand-written page, remind a session that
+changed files and wrote nothing — and every one of them existed on one harness.
+A mechanism one agent has is not a mechanism, so the agent learns it has a
+memory the way it learns any skill exists: from the skill's `description`,
+which every harness that discovers skills shows the model at session start,
+and from the instruction file it reads on every turn.
+
+The skill's description is already in place once the skill is installed. The
+instruction file is the one thing you do by hand, once: paste the contents of
+this repository's [`AGENTS.md`](AGENTS.md) into the file your agent reads for
+every project. It says when to search, when to write, and with which command.
+
+| agent | global file, applies to every project | per-project alternative |
+|---|---|---|
+| Claude Code | `~/.claude/CLAUDE.md` | `<repo>/CLAUDE.md` |
+| Codex CLI | `~/.codex/AGENTS.md` | `<repo>/AGENTS.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` — optional: the extension already ships `GEMINI.md` as its context file | `<repo>/GEMINI.md` |
+| Cursor | Customize → Rules (User Rules) | `<repo>/AGENTS.md` |
+| anything else | its user-level instruction file | `<repo>/AGENTS.md` |
+
+Paths come from each vendor's documentation: Claude Code's user memory file,
+Codex's `~/.codex/AGENTS.md` (concatenated with the repository's own from the
+root down), Gemini's "default instructions for all your projects", Cursor's
+"global preferences that apply across all projects". The snippet's script path
+is the global install location; with `--project` it is
+`.agents/skills/project-memory/scripts/`, and in a clone of this repository
+`skills/project-memory/scripts/`.
+
+This is how superpowers, the most widely installed skills library, runs on
+Codex, Devin and Grok — nothing injected, the skill index is the trigger — and
+it removed its own Codex hook because the native index worked better. The
+survey, by primary sources, is in `docs/research/superpowers-portability.md`.
+
+Whether an agent actually searches when nobody reminds it is the one thing a
+paste cannot guarantee, on any harness. `evals/acceptance.py` is the proof: a
+real session of the agent you name, a question only the store answers, and a
+check of the store's log for the search. See [Measured](#measured).
 
 **On Windows, mind the interpreter name.** `python3` is not a command Windows
-has: the installer puts `python`, `py` and `pymanager` on PATH. The pointer
-files say `python3`; if that name does not resolve on your machine, replace it
-in the snippet you paste. `install.sh --interpreter py` verifies the install
-with a particular interpreter. The scripts themselves are unaffected and the CI
-matrix covers Windows.
-
-An agent that does not auto-discover skills needs only the scripts on disk plus
-a pointer. Append [`AGENTS.md`](AGENTS.md) from this repo to your project's
-`AGENTS.md` — that file is the whole integration.
-
-### What is verified, and what is not
-
-The Claude Code path is checked in CI on every push to `main` and on every
-pull request: `claude plugin validate
---strict` for the plugin manifests and the Agent Skills spec validator for
-`SKILL.md`. The Python that both paths run is tested on Ubuntu, macOS and
-Windows against Python 3.11 and 3.13.
-
-The Codex, Cursor, Gemini and Kimi manifests are modelled on a widely-installed
-skills repository's working manifests, and their shape is stable, but **no one
-has yet installed this skill in those agents and watched it run**. If you do,
-open an issue either way.
-
-OpenCode and Pi are not supported yet: they need an executable extension in
-JavaScript and TypeScript respectively, not just a manifest, and shipping code
-that has never been executed is worse than shipping nothing.
-
-### Evaluating from a cold clone
-
-```bash
-git clone https://github.com/Krowli/project-memory && cd project-memory
-pip install -e ".[dev]" && pytest
-```
-
-Green suite, no network, no fixtures beyond `tmp_path`. To try it for real:
-
-```bash
-mkdir -p .memory
-python3 skills/project-memory/scripts/memory_write.py --slug hello \
-  --title "First page" --kind concept --source README.md --body -   <<'PMEOF'
-## Why this exists
-
-A page has to carry something the source file cannot tell you on its own — the
-reason behind a choice, the option that was rejected, the constraint that lives
-outside the repository. Anything shorter than two hundred characters is refused
-on the grounds that reading the code would have been faster, and this paragraph
-exists mainly to clear that bar honestly.
-PMEOF
-python3 skills/project-memory/scripts/memory_search.py "first page"
-```
+has: the installer puts `python`, `py` and `pymanager` on PATH. The snippet
+says `python3`; if that name does not resolve on your machine, replace it in
+the copy you paste. `install.sh --interpreter py` verifies the install with a
+particular interpreter. The scripts themselves are unaffected and the CI matrix
+covers Windows.
 
 ## Usage
 
@@ -169,10 +166,16 @@ Search before answering, write after meaningful work:
 
 ```bash
 memory_search.py "terminal freeze webgl context lost"     # ranked: slug — title — what matched — [score] updated
+memory_search.py --touching src/terminal/renderer.ts     # the pages about this file, first
 memory_write.py --slug webgl-context-loss \
   --title "xterm WebGL context loss on display sleep" \
   --kind bug --source src/terminal/renderer.ts --body - < page.md
+memory_stats.py --since 2026-09-01                        # what the store has been doing
 ```
+
+`--touching PATH` puts the pages whose `sources` cite that file, or anything
+under that directory, ahead of every lexical hit, marked `▸ touches <path>`,
+with or without query words. A file matches only itself, never its siblings.
 
 Re-running `memory_write.py` with the same slug replaces same-header sections in
 place and appends new ones, so repeated calls are safe and an amendment is cheap.
@@ -214,22 +217,22 @@ in, which is what makes it the place for the check.
 
 ### The store keeps a log, and something reads it
 
-Writes, refusals and queries are appended to `.memory/.log.jsonl`. The store
-carries its own `.gitignore` for that file, so it stays out of commits under
-every store mode — it holds every query anyone typed.
+Writes, refusals and queries are appended to `.memory/.log.jsonl`, each line
+stamped with the session id the harness exports to the shell where one is
+exported. The store carries its own `.gitignore` for that file, so it stays out
+of commits under every store mode — it holds every query anyone typed.
 
 ```bash
-memory_stats.py --since 2026-08-09
+memory_stats.py --since 2026-08-17
 ```
 ```
-2026-08-09T09:12:41 … 2026-08-17T16:04:03
+2026-08-17T18:31:03 … 2026-09-16T23:35:03
 
-writes       23   (19 new, 4 merged, median 812 chars)
-refused       6   (21% of write attempts)
-                4  body_too_short
-                2  source_missing
-searches     87   (9% returned nothing)
-                miss: worktree detach race
+writes       24   (19 new, 5 merged, median 1536 chars)
+refused       0   (0% of write attempts)
+searches     41   (7% returned nothing)
+            miss: terminal pane rendering Zenith Tauri
+sessions      1   (0 searched and never wrote, 4.00 writes per session)
 ```
 
 This is deliberately a pair. Collecting refusals without a reader would repeat
@@ -237,39 +240,142 @@ the exact failure the write gate exists to prevent: the system this replaced had
 a reconcile pass that counted source rot correctly for months into a structure
 with no consumer. A refusal rate concentrated on one code usually means the rule
 is wrong rather than the writer; queries that return nothing point at either a
-hole in the corpus or a hole in ranking.
+hole in the corpus or a hole in ranking; sessions that searched and never wrote
+are the write side's "did it happen", with no hook collecting it.
 
-### Where the store lives, and who decides
+## Measured
 
-Installing places two separate things, and they are not the same decision. The
-**skill** is code: safe to commit, goes to `.agents/skills/`. The **store** is
-whatever you write into it.
+Every number below is reproducible from this repository: the corpus, the
+queries, the methods and the scorer are committed under `evals/`, and the
+commands that produce each table are listed at the end. Intervals are 95%
+bootstrap over queries; comparisons between methods are paired. One caveat
+applies to all of it: the 90-page corpus and its 270 queries were written by a
+language model about a fictional project, not harvested from a real store. The
+`paraphrase` query type exists to fight the obvious bias — a query written from
+a page tends to reuse its words — but it does not remove it.
 
-A default (user-scope) install does not create a store and does not ask about
-one: it is not standing in any particular project, and it will meet many. A store
-is created the first time an agent writes in a project, and is added to that
-project's `.gitignore` at that moment — the one point where nobody has to
-remember. `install.sh --project` is the run that asks, and can pick a different
-mode up front:
+### Retrieval quality
 
-| mode | where | who can read it |
+nDCG@10 on 270 known-item queries over 90 pages.
+
+| method | nDCG@10 | vs shipped, paired |
 |---|---|---|
-| `gitignored` *(default)* | `.memory/` in the project, added to `.gitignore` | only this machine |
-| `tracked` | `.memory/` in the project, committed | anyone with repo access |
-| `home` | `~/.project-memory/<project>/`, symlinked as `.memory/` | only this machine, and it cannot be committed by accident |
+| **shipped (FTS5 index)** | **0.649** [0.600, 0.691] | — |
+| shipped fallback, in-process BM25F | 0.644 | +0.004 [−0.009, +0.018], not a difference |
+| title weight set to 0 | 0.595 | +0.054 [+0.027, +0.081] |
+| term-count scoring, the previous ranker | 0.432 | +0.216 [+0.164, +0.267] |
+| `grep -rilE`, unranked | 0.113 | +0.535 [+0.480, +0.586] |
 
-Pass `--store <mode>` to skip the question, or `--no-store` to install the skill
-and nothing else. With no terminal to ask on — a pipeline, CI, a container — it
-takes `gitignored` rather than guessing, because the mistake it prevents is
-one-way: notes pushed to a remote cannot be unpublished.
+By query type, shipped: keywords 0.792, paraphrase 0.532, prose 0.622. On 12
+ambiguous queries with several relevant pages, 0.462. The two shipped paths
+are indistinguishable in quality, which is what makes the index safe to prefer
+for speed.
 
-Choose `tracked` deliberately, when you want the record reviewed in pull
-requests and shared with the team, and you are confident nothing sensitive will
-land in it.
+The most useful negative result: on 20 realistic questions that **no page
+answers**, every method returned hits for all 20, and the top hit's score is
+no different — median 9.93 for an answerable question against 8.73 for an
+unanswerable one. A score threshold that removes a meaningful share of the
+unanswerable set removes more of the answerable one. So the instruction to the
+agent carries this instead: a result list is not evidence that an answer
+exists.
 
-At runtime the scripts resolve the store as `$PROJECT_MEMORY_DIR` if set,
-otherwise the nearest `.memory/` walking up from the working directory — so the
-`home` mode's symlink works with no extra configuration.
+### Searching by file
+
+50 source paths, one per page, each relevant to every page that cites it.
+
+| the path given as | nDCG@10 | R@1 |
+|---|---|---|
+| query words | 0.545 [0.450, 0.638] | 0.380 |
+| `--touching` | 0.986 [0.965, 1.000] | 0.960 |
+
+Paired +0.441 [+0.349, +0.539]. The second row is near the ceiling by
+construction; the first is what typing the path costs today, and words cannot
+recover it because 77 of the 90 pages never name a source file in title or body.
+
+### Embeddings, measured and refused
+
+The hybrid of BM25F with a transformer embedding
+(`paraphrase-multilingual-MiniLM-L12-v2`, reciprocal rank fusion) is better:
+**+0.046 [+0.014, +0.075]**. It is refused on cost, not quality: the skill is a
+script run afresh per search, so the model loads every time — about 1 000 ms
+and 1.06 GB resident against 72 ms for the whole shipped search. Static
+embeddings, the cheapest form of the idea, were then measured to the same bar:
+
+| model | on disk | hybrid vs shipped | cold process to a vector | peak RSS |
+|---|---|---|---|---|
+| `potion-base-8M` | 30 MB | +0.031 [−0.002, +0.063] | 527 ms | 143 MB |
+| `potion-retrieval-32M` | 129 MB | +0.029 [−0.002, +0.063] | 585 ms | 355 MB |
+| `potion-multilingual-128M` | 512 MB | +0.012 [−0.019, +0.042] | 2 218 ms | 1 842 MB |
+| shipped search, whole, cold | — | — | 86 ms | 26 MB |
+
+No interval clears zero and the cheapest cold start is six times the shipped
+search. Dense retrieval is also worst exactly where it is supposed to win: on
+paraphrase queries the transformer scores 0.347 against the lexical ranker's
+0.532.
+
+### Against the closest competitor
+
+Basic Memory 0.22.1 — markdown on disk plus a persistent hybrid index with
+local embeddings and a link graph — on the same pages, queries and scorer:
+overall 0.640 against 0.649, paired **+0.009 [−0.040, +0.058], not
+significant**. Keywords 0.830 against 0.792 in its favour, paraphrase 0.481
+against 0.532 in this project's favour. Latency is deliberately not compared:
+Basic Memory is designed to run as a long-lived server.
+
+### Does it help the agent
+
+`evals/agent_loop.json`: the corpus written out as a real store, 18 questions
+in three families put to an agent with the store, the same questions minus the
+store-only ones to a control agent without it, graded against gold facts fixed
+before the answers existed.
+
+| | with the store | control, no store |
+|---|---|---|
+| answerable (8) — the answer is in exactly one page | 8 correct | not run |
+| unanswerable (5) — no page answers it | 5 abstained | 5 abstained |
+| superseded (5) — a decision was reversed; asks what holds *now* | 5 correct, 0 obsolete | 5 abstained |
+
+Median effort: 2 searches and 2 pages read when the answer exists, 6 searches
+before concluding it does not. One run, one grader, a fictional project the
+model cannot confabulate about; read the unanswerable row as an upper bound.
+
+### Does the agent use it unprompted
+
+`evals/acceptance.py`, 2026-09-16, no hook anywhere, no pointer file in the
+project, one question only the store answers.
+
+| agent | searches before answering | outcome | time |
+|---|---|---|---|
+| Claude Code, skill via `--plugin-dir`, user settings excluded | 2 | answer named the decision | 19 s |
+| Codex CLI 0.153, skill via `.agents/skills`, user config and rules ignored | 1 | answer named the decision and followed the `superseded by` marker to the reversal | 24 s |
+
+One run each, one question. Gemini, Cursor, Kimi, Copilot, OpenCode and Pi are
+unmeasured until someone runs the same command there.
+
+### Speed, and the cost of the gate
+
+End to end, as a shell invocation: 90 pages 235 ms reading every page against
+99 ms with the warm index; 1 000 pages 1 887 against 174 ms; 5 000 pages
+4 637 against 196 ms. A warm search is nearly flat in corpus size.
+
+The write gate was tuned to a real population: 104 of 495 pages in the corpus
+it was designed against were stubs averaging 139 characters, and they took the
+top two result slots. Before the per-page lock, concurrent writers on one slug
+— ordinary with subagent fan-out — lost up to 16 of 20 sections while every
+command exited 0.
+
+### Reproduce
+
+```bash
+python3 evals/run.py --by-type                 # retrieval, touching, ambiguous, unanswerable, calibration
+python3 evals/dense_probe.py                   # needs fastembed; --static MODEL needs model2vec
+python3 evals/compare_basic_memory.py          # needs basic-memory
+python3 evals/acceptance.py --agent '...'      # a real agent session; see the file for commands
+pytest                                         # 209 tests, both retrieval paths in CI
+```
+
+Every decision these numbers bought is also a page in this repository's own
+`.memory/`, dated and sourced, including the two that refused something.
 
 ## Layout
 
@@ -295,28 +401,34 @@ tests/                     pytest suite, stdlib only
 | Claude Code | plugin marketplace, or `~/.claude/skills/` | yes, acceptance run |
 | Codex | `~/.agents/skills/`, `$REPO_ROOT/.agents/skills` | yes, acceptance run |
 | Cursor | `.agents/skills/`, `~/.agents/skills/` | per vendor docs |
-| Gemini CLI | `~/.agents/skills/` (alias of `~/.gemini/skills/`) | per vendor docs |
+| Gemini CLI | extension with `GEMINI.md` as its context file | per vendor docs |
+| Kimi Code | plugin with `sessionStart.skill` | per vendor docs |
 | Anything else | scripts + the `AGENTS.md` snippet | n/a |
 
 `SKILL.md` frontmatter is restricted to the six fields in the
 [Agent Skills spec](https://agentskills.io/specification) (`name`,
 `description`, `license`, `compatibility`, `metadata`, `allowed-tools`), so the
 same file loads in Claude Code and uploads to claude.ai unchanged. A CI test
-enforces that restriction.
+enforces that restriction. The Claude Code path is checked in CI on every push
+to `main`: `claude plugin validate --strict` for the manifests and the Agent
+Skills spec validator for `SKILL.md`. The Python is tested on Ubuntu, macOS and
+Windows against Python 3.11 and 3.13, on both retrieval paths.
 
 ## Contributing
 
-`pytest` must be green and `ruff check .` clean. The version is carried in eight
+`pytest` must be green and `ruff check .` clean. The version is carried in nine
 places and a test fails if any of them drift: `.claude-plugin/plugin.json`,
 `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`,
 `.cursor-plugin/plugin.json`, `.kimi-plugin/plugin.json`,
-`gemini-extension.json`, `pyproject.toml` and `SKILL.md`'s `metadata.version`.
-Bump them together, add a `CHANGELOG.md` entry, then tag:
+`gemini-extension.json`, `pyproject.toml`, `SKILL.md`'s `metadata.version` and
+`memory_lib.VERSION`. Bump them together, add a `CHANGELOG.md` entry, then tag:
 
 ```bash
-claude plugin tag . --push        # creates project-memory--v0.1.0
-git tag v0.1.0 && git push --tags # triggers the release workflow
+git tag -a v0.3.0 -m "project-memory 0.3.0" && git push origin main v0.3.0
 ```
+
+The tag triggers the release workflow, which checks the tag against the
+manifests and publishes the changelog section as the GitHub release.
 
 ## License
 

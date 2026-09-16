@@ -6,6 +6,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- README rewritten around the three questions people ask first: is the skill
+  global or local (global by default, the store is always per project), how to
+  make an agent keep the memory without hooks (one paste into the agent's
+  global instruction file, paths per vendor docs), and what was measured, with
+  every table and the command that reproduces it.
+- The calibration medians quoted in `SKILL.md` and `references/retrieval.md`
+  (5.32 against 5.29) predated the FTS5 index; re-measured with the current
+  harness they are 9.93 against 8.73. The conclusion is unchanged: a score
+  threshold cannot tell an answerable question from an unanswerable one.
+
 ## [0.3.0] - 2026-09-16
 
 ### Added
