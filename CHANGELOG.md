@@ -6,6 +6,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-16
+
 ### Added
 
 - **`memory_search.py --touching PATH`** — the pages whose `sources` cite that
@@ -311,7 +313,8 @@ they found, all of it now covered by a test that fails when the fix is removed:
 - Claude Code plugin and marketplace manifests.
 - Test suite covering search, writing, frontmatter tolerance and manifests.
 
-[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Krowli/project-memory/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Krowli/project-memory/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Krowli/project-memory/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Krowli/project-memory/compare/v0.1.0...v0.2.0
