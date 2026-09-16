@@ -28,10 +28,10 @@ _LOG_LOCK = threading.Lock()
 # Written by `install.sh --store tracked`: the pages here are meant to be
 # committed, so nothing should quietly add them to .gitignore behind the user.
 TRACKED_MARKER = ".tracked"
-# Claude Code exports the session id to the Bash tool, which is where a write
-# runs; stamped into every log line, it lets the Stop hook ask "did this session
-# record anything". Not in the documented environment, so its absence is fine —
-# the record simply carries no session.
+# Claude Code exports the session id to the Bash tool, which is where the scripts
+# run; stamped into every log line, it lets memory_stats count the sessions that
+# searched and never wrote. Not in the documented environment, so its absence is
+# fine — the record simply carries no session.
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 
 LOCK_STALE_SECONDS = 30.0
@@ -89,6 +89,17 @@ class Page:
     @property
     def updated(self) -> str:
         return str(self.meta.get("updated") or self.meta.get("created") or "")
+
+# Below this, a page is restating what the source file already says. Tuned to
+# the stub population it is meant to exclude (bodies around 139 characters).
+# The writer refuses a page under it; the reader skips one, because a page can
+# arrive around the writer — by hand, from another tool, from an agent whose
+# harness cannot deny a Write — and the check has to hold wherever search runs.
+MIN_BODY = 200
+
+
+def too_thin(page: Page) -> bool:
+    return len(page.body.strip()) < MIN_BODY
 
 
 _FM = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)

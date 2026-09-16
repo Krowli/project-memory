@@ -9,7 +9,7 @@ it answers, which are exactly the ones a trial period has to settle:
   did agents write at all          — writes, and how many were merges
   is the gate helping or annoying  — refusals by code, as a share of attempts
   does search find things          — queries that returned nothing
-  did a session that changed things record anything — from the Stop hook's lines
+  did a session that read the memory write anything — by the session id in each line
 
 A refusal rate that is high and concentrated on one code usually means the rule
 is wrong, not the writer. Queries with zero hits are the strongest signal there
@@ -68,12 +68,14 @@ def summarise(records: list[dict]) -> dict:
     attempts = len(writes) + len(rejects)
     misses = [r for r in searches if not r.get("hits")]
 
-    # One `stop` line per turn; the last one per session is how it ended. A
-    # session nudged mid-way that then wrote is not an unrecorded session.
-    stops = [r for r in records if r.get("event") == "stop" and r.get("session")]
-    ended = {r["session"]: r for r in stops}
+    # A session is whatever the harness stamped as one; lines without a stamp
+    # are another harness or an older log, and are not a session. The number to
+    # watch is sessions that searched and never wrote — the write side's "did it
+    # happen", collected by the scripts themselves rather than by a hook.
     sessions = {r["session"] for r in records if r.get("session")}
-    unrecorded = sum(1 for r in ended.values() if r.get("notable") and not r.get("writes"))
+    searched = {r["session"] for r in searches if r.get("session")}
+    wrote = {r["session"] for r in writes if r.get("session")}
+    unrecorded = len(searched - wrote)
     attributed = sum(1 for r in writes if r.get("session"))
 
     return {
@@ -91,7 +93,6 @@ def summarise(records: list[dict]) -> dict:
         "zero_hit_queries": [r.get("query") for r in misses][-15:],
         "sessions": len(sessions),
         "sessions_unrecorded": unrecorded,
-        "nudges": sum(1 for r in stops if r.get("nudged")),
         "writes_per_session": round(attributed / len(sessions), 3) if sessions else 0.0,
     }
 
@@ -125,9 +126,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"searches  {s['searches']:>5}   ({s['zero_hit_rate']:.0%} returned nothing)")
     for q in s["zero_hit_queries"]:
         print(f"            miss: {q}")
-    print(f"sessions  {s['sessions']:>5}   ({s['sessions_unrecorded']} changed the tree and "
-          f"recorded nothing, {s['nudges']} reminded, "
-          f"{s['writes_per_session']:.2f} writes per session)")
+    print(f"sessions  {s['sessions']:>5}   ({s['sessions_unrecorded']} searched and never "
+          f"wrote, {s['writes_per_session']:.2f} writes per session)")
     return 0
 
 

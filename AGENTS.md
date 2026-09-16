@@ -30,6 +30,6 @@ The script validates and rejects: no sources, a source path that does not exist,
 
 Re-running the same slug replaces same-header sections in place and appends new ones, so amendments are cheap and safe.
 
-Skip this for typos, reverts, formatting and test-only edits. One topic per page; cross-link with `[[other-slug]]`.
+Skip this for typos, reverts, formatting and test-only edits. Before you report the work done, ask whether it changed three or more files; if so, write the page or say in one line that there is nothing worth keeping. One topic per page; cross-link with `[[other-slug]]`.
 
 The path above is the default install. With `install.sh --project` the scripts are at `.agents/skills/project-memory/scripts/` instead, and in a clone of the project-memory repository itself at `skills/project-memory/scripts/`.

@@ -49,15 +49,17 @@ leaving two pages that both read as current.
 
 The script validates and rejects: no sources, a source path that does not exist,
 a resulting page too short to be worth keeping. A rejection exits non-zero and
-prints a `FIX:` line with the command to run instead — follow it. Writing a page
-by hand is denied by a hook, because hand-edited frontmatter is the one input the
-parser cannot round-trip.
+prints a `FIX:` line with the command to run instead — follow it rather than
+writing the markdown by hand: search skips a hand-written page under 200
+characters and marks one with no sources.
 
 Re-running the same slug replaces same-header sections in place and appends new
 ones, so amendments are cheap and safe.
 
-Skip this for typos, reverts, formatting and test-only edits. One topic per
-page; cross-link with `[[other-slug]]`.
+Skip this for typos, reverts, formatting and test-only edits. Before you report
+the work done, ask whether it changed three or more files; if so, write the page
+or say in one line that there is nothing worth keeping. One topic per page;
+cross-link with `[[other-slug]]`.
 
 Installed rather than cloned, the same scripts live at
 `~/.agents/skills/project-memory/scripts/` (the default) or at

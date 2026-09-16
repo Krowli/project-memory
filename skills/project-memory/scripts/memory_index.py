@@ -66,7 +66,7 @@ def fts5_available() -> bool:
 
     `import sqlite3` lives here rather than at module scope on purpose — Debian's
     `python3-minimal` ships no `sqlite3` module at all, and a top-level import
-    would turn a working search into a traceback on every session-start hook.
+    would turn a working search into a traceback on every search.
     """
     if os.environ.get(DISABLE_ENV):
         return False

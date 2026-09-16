@@ -3,7 +3,9 @@ slug: stop-hook-reminds-once
 title: "A Stop hook reminds a session that changed things and recorded nothing"
 kind: decision
 created: 2026-09-15
-updated: 2026-09-15
+updated: 2026-09-16
+status: superseded
+superseded_by: scripts-carry-the-contract-not-hooks
 sources:
   - hooks/session_stop.py
   - skills/project-memory/scripts/memory_lib.py

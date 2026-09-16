@@ -14,6 +14,12 @@ may stand alone or accompany query words. Sources are not in the index, so this
 reads every page — measured, that is the scan path's cost, and it is paid only
 when the flag is given.
 
+The write gate runs here too. A page under MIN_BODY that matched the query is
+not ranked; it is named on stderr and in `--json` so it can be rewritten through
+memory_write.py. A page with no sources is shown, marked. Search runs on every
+harness the skill is installed in, which is what makes this the place for it:
+a hook that denies a hand-written page exists on one harness only.
+
 Two retrieval paths, one ordering. A persistent SQLite FTS5 index (memory_index)
 answers when it can; when it cannot — no FTS5 in this interpreter, a read-only
 store, a sibling process rebuilding, a corrupt file — the pages are read and
@@ -36,7 +42,16 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import memory_index
-from memory_lib import VERSION, Page, find_store, load_pages, log_event, parse_page
+from memory_lib import (
+    MIN_BODY,
+    VERSION,
+    Page,
+    find_store,
+    load_pages,
+    log_event,
+    parse_page,
+    too_thin,
+)
 
 # BM25F parameters. k1/b are the textbook values; a cross-validated sweep moved
 # nDCG@10 by 0.017, which does not justify carrying tuned constants. The title
@@ -251,6 +266,10 @@ last_path = "scan"
 # Module state like `last_path`, so the return type every caller relies on stays
 # `(score, page)` while the result line can still say why a page is there.
 last_touching: dict[str, list[str]] = {}
+# Pages that matched the last query and were skipped for being under MIN_BODY.
+# Only the ones that matched: naming every thin page in the store would be the
+# reconcile pass this project refuses to build — a count nobody asked for.
+last_skipped: list[Page] = []
 
 
 def order(hits: list[tuple[float, Page]], k: int,
@@ -292,6 +311,9 @@ def _from_index(query: str, store: Path, k: int) -> list[tuple[float, Page]] | N
             page = parse_page(store / f"{slug}.md")
         except OSError:
             continue  # deleted since the index was built; the next search rebuilds
+        if too_thin(page):
+            last_skipped.append(page)
+            continue
         if page.superseded_by:
             score *= SUPERSEDED_WEIGHT
         hits.append((score, page))
@@ -313,16 +335,24 @@ def _from_scan(query: str, store: Path, k: int,
     idx = build_index(pages)
     touched = touching(pages, paths, store.parent) if paths else {}
     last_touching = touched
-    hits = [(s, idx.pages[i]) for i in range(idx.n_docs)
-            if (s := score_doc(terms, idx, i) if terms else 0.0) > 0
-            or idx.pages[i].slug in touched]
+    hits: list[tuple[float, Page]] = []
+    for i in range(idx.n_docs):
+        page = idx.pages[i]
+        score = score_doc(terms, idx, i) if terms else 0.0
+        if score <= 0 and page.slug not in touched:
+            continue
+        if too_thin(page):
+            last_skipped.append(page)
+            continue
+        hits.append((score, page))
     return order(hits, k, touched)
 
 
 def search(query: str, store: Path, k: int = 10,
            touching: list[str] | None = None) -> list[tuple[float, Page]]:
-    global last_path, last_touching
+    global last_path, last_touching, last_skipped
     last_touching = {}
+    last_skipped = []
     terms = tokenize(query)
     paths = [p for p in (touching or []) if p.strip()]
     if not terms and not paths:
@@ -344,7 +374,8 @@ def search(query: str, store: Path, k: int = 10,
     # operation must not dirty a working tree that never opted in.
     log_event(store, "search", query=query, hits=len(hits),
               top=hits[0][1].slug if hits else None,
-              **({"touching": paths} if paths else {}))
+              **({"touching": paths} if paths else {}),
+              **({"skipped": len(last_skipped)} if last_skipped else {}))
     return hits
 
 
@@ -385,9 +416,19 @@ def format_hit(score: float, page: Page, query: str = "") -> str:
             f"[{score:.1f}] {page.updated}")
     if page.slug in last_touching:
         line += f"  ▸ touches {', '.join(last_touching[page.slug])}"
+    if not page.meta.get("sources"):
+        line += "  ⚠ no sources"
     if page.superseded_by:
         line += f"  ⚠ superseded by {page.superseded_by}"
     return line
+
+
+def format_skipped(skipped: list[Page], store: Path) -> str:
+    """One line, once, naming what the query would have shown and did not."""
+    names = ", ".join(sorted(p.slug for p in skipped))
+    return (f"skipped {len(skipped)} page(s) under {MIN_BODY} chars, which memory_write.py "
+            f"would refuse: {names} — rewrite them through memory_write.py to make them "
+            f"searchable (they are in {store})")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -412,12 +453,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(
             {"served_by": last_path,
+             "skipped": sorted(p.slug for p in last_skipped),
              "hits": [{"slug": p.slug, "title": p.title, "score": round(s, 3),
                        "updated": p.updated, "superseded_by": p.superseded_by,
+                       "sources": list(p.meta.get("sources") or []),
                        "touching": last_touching.get(p.slug, []),
                        "path": str(p.path)} for s, p in hits]},
             ensure_ascii=False, indent=2))
-    elif not hits:
+        return 0
+    if not hits:
         print(f"no matches in {store}", file=sys.stderr)
     else:
         # The store's absolute path, so the documented `cat` works from any
@@ -425,6 +469,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(hits)} hit(s) in {store}")
         for s, p in hits:
             print(format_hit(s, p, query))
+    if last_skipped:
+        print(format_skipped(last_skipped, store), file=sys.stderr)
     return 0
 
 

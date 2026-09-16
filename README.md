@@ -63,56 +63,60 @@ To update, run the same command again. To see whether that is worth doing:
 ./install.sh --check      # installed: 0.2.0 / latest: v0.2.0 / update: up to date
 ```
 
-Every script also answers `--version`, and the session hook tells the agent which
-version this project is running, because a `curl` install has no package manager
-to ask.
+Every script also answers `--version`, because a `curl` install has no package
+manager to ask.
 
-Run it from anywhere. It installs the skill to `~/.agents/skills/`, registers the
-three hooks, and stops there — a store is not something to set up per project,
-it appears at the first write and shields itself as it is created.
+Run it from anywhere. It installs the skill to `~/.agents/skills/` and stops
+there — it touches no agent's settings, and a store is not something to set up
+per project: it appears at the first write and shields itself as it is created.
 
 To install into one repository instead, and commit the skill with it, add
-`--project`. Add `--no-hook` to leave `settings.json` alone.
+`--project`.
 
-### It does not need to be introduced
+### One path for every agent
 
-A skill description is an invitation the model may decline; `hooks/` puts the
-instruction into the session before the first turn, on startup and again after a
-clear, a compact or a resume. You never say "we have a memory, use it" — the
-agent already knows, and knows how many pages are in this project. Around 1.8 KB
-of context, which is why it is a pointer and the full contract stays in
-`SKILL.md`.
+There are no hooks. Earlier versions carried three Claude Code hooks — one to
+announce the memory at session start, one to deny a hand-written page, one to
+remind a session that changed files and wrote nothing — and every one of them
+existed on one harness. Codex, Gemini, Cursor, Kimi, Copilot and the rest got
+the manifests and the prose. A mechanism one agent has is not a mechanism, so
+each guarantee now lives where every agent can see it:
 
-A second hook makes the write gate a gate. `PreToolUse` denies a direct Write or
-Edit of a `.memory/*.md` page and names `memory_write.py` instead — without it,
-"writes are refused, not requested" is itself a request, since the ordinary Write
-tool walks straight around the validator. Set
-`PROJECT_MEMORY_ALLOW_HAND_EDIT=1` to repair a page by hand deliberately.
+- **The agent learns it has a memory** the way it learns any skill exists: the
+  `description` in `SKILL.md`, which every harness that discovers skills shows
+  the model at session start, plus the manifest-declared context files where a
+  harness has them (`GEMINI.md`, Kimi's `sessionStart.skill`) and the
+  [`AGENTS.md`](AGENTS.md) snippet for the rest. This is how superpowers, the
+  most widely installed skills library, runs on Codex, Devin and Grok, and it
+  removed its own Codex hook because the native skill index worked better —
+  the survey is in `docs/research/superpowers-portability.md`.
+- **The write gate runs on read.** `memory_search.py` applies the writer's
+  floor to whatever it finds: a page under 200 characters that matched the
+  query is not ranked and is named, so it can be rewritten through
+  `memory_write.py`; a page with no sources is shown but marked. A page can
+  arrive around the script on any agent, and search runs on every one.
+- **Writing after work is a rule, not a reminder.** `SKILL.md` and the pointer
+  files say when to write and when to say there is nothing to record.
+  `memory_stats.py` reports how many sessions searched and never wrote, from
+  the session id the scripts stamp into the log, so whether the rule is
+  followed is a number rather than an impression.
 
-A third hook closes the write side. "Write after meaningful work" was the one
-rule left in prose, and on a small task set an agent told to read and apply its
-memory wrote nothing in ten tasks. So when Claude finishes a turn having changed
-three or more files while this session's log shows no page, a `Stop` hook says
-so — once per session, as feedback the agent acts on rather than a blocking
-error, and "nothing to record" in one word is a fine answer. It reads `git
-status`, so a session that committed everything is invisible to it, and it
-attributes writes by the session id Claude Code exports to the Bash tool.
-`memory_stats.py` then reports how many sessions changed the tree and recorded
-nothing, which is the number this hook exists to move.
+Whether an agent actually searches when nobody reminds it is the one thing none
+of this can guarantee, on any harness — superpowers' porting guide says the same
+and makes an acceptance run the only proof. `evals/acceptance.py` is that run
+here: a real session of the agent you name, a question only the store answers,
+and a check of the store's log for the search. Run it per harness before
+claiming the harness is supported. Run on 2026-09-16 with no pointer file in
+the project: Claude Code searched twice before answering, Codex CLI searched
+once and followed the `superseded by` marker to the reversal. One run each;
+the other harnesses are unmeasured.
 
-Installed as a plugin, the agent picks up `hooks/hooks.json` itself. Installed
-over `curl` there is no plugin system, so the installer writes all three hooks
-into `settings.json`, tagged `project-memory-session-start`,
-`project-memory-write-guard` and `project-memory-session-stop` so they can be
-found and removed.
-
-**On Windows, mind the interpreter name.** `python3` is not a command Windows has:
-the installer puts `python`, `py` and `pymanager` on PATH. `install.sh` resolves a
-working interpreter and writes that one into `settings.json`, so the `curl` path is
-fine — use `--interpreter py` to force a particular one. A plugin manifest cannot
-branch per platform, so `hooks/hooks.json` hard-codes `python3`; installed as a
-plugin on Windows, both hooks silently do nothing unless `python3` resolves. The
-scripts themselves are unaffected and the CI matrix covers Windows.
+**On Windows, mind the interpreter name.** `python3` is not a command Windows
+has: the installer puts `python`, `py` and `pymanager` on PATH. The pointer
+files say `python3`; if that name does not resolve on your machine, replace it
+in the snippet you paste. `install.sh --interpreter py` verifies the install
+with a particular interpreter. The scripts themselves are unaffected and the CI
+matrix covers Windows.
 
 An agent that does not auto-discover skills needs only the scripts on disk plus
 a pointer. Append [`AGENTS.md`](AGENTS.md) from this repo to your project's
@@ -201,6 +205,13 @@ non-zero and prints a `FIX:` line naming the next command when a page has:
 The correction then lands inside the agent's own tool loop, where it acts on it,
 rather than in a document it may never read.
 
+The same floor is applied on read. A page that arrived around the script — by
+hand, from another tool, from an agent whose harness cannot refuse a Write — is
+skipped by search while it is under 200 characters, and named on stderr and in
+`--json` so it can be rewritten through the script; a page with no sources is
+shown, marked `⚠ no sources`. Search runs on every agent the skill is installed
+in, which is what makes it the place for the check.
+
 ### The store keeps a log, and something reads it
 
 Writes, refusals and queries are appended to `.memory/.log.jsonl`. The store
@@ -269,9 +280,9 @@ skills/project-memory/     the skill itself — this is what gets installed
                            memory_stats.py, memory_lib.py
   references/              detail loaded on demand, not at startup
   assets/                  page template
-hooks/                     session_start.py (announce), write_guard.py (enforce),
-                           session_stop.py (remind)
-evals/                     reproducible retrieval measurement: corpus, queries, scorer
+evals/                     reproducible retrieval measurement: corpus, queries, scorer;
+                           acceptance.py runs a real agent session against the store
+docs/research/             primary-source notes behind decisions
 tests/                     pytest suite, stdlib only
 .memory/                   this project's own pages, tracked on purpose
 .claude-plugin/            plugin.json + marketplace.json
@@ -281,8 +292,8 @@ tests/                     pytest suite, stdlib only
 
 | Agent | Mechanism | Verified |
 |---|---|---|
-| Claude Code | plugin marketplace, or `~/.claude/skills/` | yes |
-| Codex | `~/.agents/skills/`, `$REPO_ROOT/.agents/skills` | per vendor docs |
+| Claude Code | plugin marketplace, or `~/.claude/skills/` | yes, acceptance run |
+| Codex | `~/.agents/skills/`, `$REPO_ROOT/.agents/skills` | yes, acceptance run |
 | Cursor | `.agents/skills/`, `~/.agents/skills/` | per vendor docs |
 | Gemini CLI | `~/.agents/skills/` (alias of `~/.gemini/skills/`) | per vendor docs |
 | Anything else | scripts + the `AGENTS.md` snippet | n/a |

@@ -3,10 +3,10 @@ slug: write-gate-refuses-not-requests
 title: "The write path refuses pages instead of asking for good ones"
 kind: decision
 created: 2026-08-17
-updated: 2026-08-17
+updated: 2026-09-16
 sources:
+  - skills/project-memory/scripts/memory_search.py
   - skills/project-memory/scripts/memory_write.py
-  - hooks/write_guard.py
 ---
 
 ## Context
@@ -37,3 +37,14 @@ requested" was itself a request. This project's own CLAUDE.md states the rule th
 was being broken — prefer a hook over prose for anything that must hold.
 `PROJECT_MEMORY_ALLOW_HAND_EDIT=1` is the deliberate escape hatch, checkable in a
 way a promise in prose is not.
+
+## The side door, after the hook
+
+The `PreToolUse` hook that closed the side door existed on Claude Code only, and
+the skill claims to work on any agent, so it is gone — see
+[[scripts-carry-the-contract-not-hooks]]. The door is closed from the other
+side now: `memory_search.py` applies the same floor on read. A page under
+MIN_BODY that matched the query is not ranked and is named, so it can be
+rewritten through the script; a page with no sources is shown but marked. The
+stubs this decision was written against would be skipped rather than sit in the
+top two slots, on every harness, because search runs on every harness.

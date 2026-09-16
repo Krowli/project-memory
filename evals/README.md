@@ -78,8 +78,8 @@ above — a search practically never comes back empty, so establishing absence i
   Abstaining is easier here than on a real codebase, where the temptation to fill a gap from
   training data is real. Read that row as an upper bound.
 - **Adherence is not tested.** The agent was told to search. Whether an agent searches when
-  nobody reminds it in the moment is the job of the session hook, and this measures the loop
-  working when the agent cooperates, not how often it does.
+  nobody reminds it in the moment is what `acceptance.py` checks, per harness, and this
+  measures the loop working when the agent cooperates, not how often it does.
 - One run, 18 questions, one grader per batch, questions written by a model from the corpus.
 
 ## Against the closest competitor

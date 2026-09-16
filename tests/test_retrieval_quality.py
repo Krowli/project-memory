@@ -9,6 +9,7 @@ import unicodedata
 
 import memory_search
 import memory_write
+from conftest import FILLER
 
 DECOY = ("The palette highlights fuzzy match ranges. webgl context loss is mentioned "
          "here in passing, webgl context loss again, and webgl context loss once more. ") * 3
@@ -20,7 +21,7 @@ def test_a_title_match_outranks_a_body_repeating_the_query(store):
     frequency, so this test is what makes that number load-bearing."""
     memory_write.write_page(store, "webgl-context-loss",
                             "xterm WebGL context loss on display sleep", "bug", [],
-                            "## Cause\n\nThe renderer keeps a context across display sleep.\n")
+                            "## Cause\n\nThe renderer keeps a context across display sleep." + FILLER)
     memory_write.write_page(store, "command-palette-highlight",
                             "Command palette match highlighting", "concept", [],
                             "## Context\n\n" + DECOY)
@@ -33,14 +34,15 @@ def test_a_query_finds_a_page_written_in_the_other_unicode_form(store):
     into ['е', 'лка'] and matched nothing — zero recall across the boundary, on
     the project's own flagship bilingual claim."""
     memory_write.write_page(store, "nfd-page", unicodedata.normalize("NFD", "Ёлка и йогурт"),
-                            "concept", [], unicodedata.normalize("NFD", "## Решение\n\nёлка\n"))
+                            "concept", [],
+                            unicodedata.normalize("NFD", "## Решение\n\nёлка" + FILLER))
     assert [p.slug for _, p in memory_search.search("ёлка", store)] == ["nfd-page"]
     assert [p.slug for _, p in memory_search.search("йогурт", store)] == ["nfd-page"]
 
 
 def test_case_folding_covers_more_than_lowercasing(store):
     memory_write.write_page(store, "strasse", "Straße naming", "concept", [],
-                            "## Context\n\nDie STRASSE ist lang.\n")
+                            "## Context\n\nDie STRASSE ist lang." + FILLER)
     assert [p.slug for _, p in memory_search.search("straße", store)] == ["strasse"]
 
 
@@ -60,9 +62,9 @@ def test_the_more_recently_updated_page_breaks_a_tie(store):
     """Alphabetical order by slug was the tie-break, so which of two equally
     scored pages came first was decided by its name."""
     memory_write.write_page(store, "zzz-newer", "Retry policy", "decision", [],
-                            "## Decision\n\nRetry twice with jitter.\n")
+                            "## Decision\n\nRetry twice with jitter." + FILLER)
     memory_write.write_page(store, "aaa-older", "Retry policy", "decision", [],
-                            "## Decision\n\nRetry twice with jitter.\n")
+                            "## Decision\n\nRetry twice with jitter." + FILLER)
     page = store / "aaa-older.md"
     page.write_text(page.read_text(encoding="utf-8").replace("updated: 2", "updated: 1"),
                     encoding="utf-8")

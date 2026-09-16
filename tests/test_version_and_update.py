@@ -38,13 +38,6 @@ def test_the_runtime_version_matches_the_manifests():
     assert memory_lib.VERSION == declared
 
 
-def test_the_session_hook_says_which_version_is_installed(tmp_path):
-    proc = subprocess.run([sys.executable, str(REPO / "hooks" / "session_start.py")],
-                          capture_output=True, text=True, cwd=tmp_path)
-    context = json.loads(proc.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert f"project-memory {memory_lib.VERSION}" in context
-
-
 # install.sh is a POSIX shell installer and is not a Windows entry point — there
 # `bash` resolves to the WSL stub, which answers in UTF-16 and installs nothing.
 # Windows users install through the plugin marketplace instead.
@@ -84,17 +77,15 @@ def test_the_installer_prefers_a_released_tag_over_the_branch():
 
 
 @conftest.needs_posix
-def test_the_command_written_into_settings_actually_runs(tmp_path):
-    """The hole that let a Windows bug ship: every hook test invoked
-    `sys.executable`, never the string the installer writes. `python3` is not a
-    command name Windows has — the installer puts `python`, `py` and `pymanager`
-    on PATH — so a hook registered as `python3 ...` silently never ran there, and
-    nothing in the suite would have noticed."""
+def test_the_installer_places_the_skill_and_touches_no_settings(tmp_path):
+    """The whole integration is the skill on disk. Nothing is registered with
+    any agent's settings, because a mechanism one harness has is not a
+    mechanism; the scripts it installs have to run with the interpreter it
+    resolved, and that is all the install has to prove."""
     home = tmp_path / "home"
     home.mkdir()
-    # The branch that is checked out, so the test exercises the hooks in this
-    # tree; hard-coded `main` installed whatever main had, which on a feature
-    # branch is not the code under test.
+    # The branch that is checked out, so the test exercises this tree rather
+    # than whatever main had.
     branch = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"],
                             capture_output=True, text=True).stdout.strip()
     proc = subprocess.run(
@@ -103,27 +94,11 @@ def test_the_command_written_into_settings_actually_runs(tmp_path):
         env={**os.environ, "HOME": str(home), "PROJECT_MEMORY_REPO": str(REPO),
              "PROJECT_MEMORY_REF": branch if branch and branch != "HEAD" else "main"})
     assert proc.returncode == 0, proc.stderr
+    assert "verified:" in proc.stdout
+    assert not (home / ".claude" / "settings.json").exists()
+    assert not (tmp_path / "skills" / "project-memory" / "hooks").exists()
 
-    settings = json.loads((home / ".claude" / "settings.json").read_text(encoding="utf-8"))
-    commands = [h["command"] for entries in settings["hooks"].values()
-                for entry in entries for h in entry["hooks"]]
-    assert len(commands) == 3, commands
-
-    for command in commands:
-        run = subprocess.run(command, shell=True, capture_output=True, text=True,
-                             input="{}", cwd=tmp_path)
-        assert run.returncode == 0, f"{command} -> {run.stderr}"
-        json.loads(run.stdout)  # every hook must answer with parseable JSON
-
-
-def test_the_plugin_path_documents_its_fixed_interpreter():
-    """`hooks/hooks.json` cannot branch per platform, so it hard-codes one command
-    name. That is a real limitation on Windows and belongs in the README rather
-    than in a surprise."""
-    config = json.loads((REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-    commands = [h["command"] for entries in config["hooks"].values()
-                for entry in entries for h in entry["hooks"]]
-    assert all(c.startswith("python3 ") for c in commands), commands
-    readme = (REPO / "README.md").read_text(encoding="utf-8")
-    assert "python3" in readme and "Windows" in readme
-    assert "--interpreter" in readme
+    search = tmp_path / "skills" / "project-memory" / "scripts" / "memory_search.py"
+    run = subprocess.run([sys.executable, str(search), "--store", str(tmp_path / "none"),
+                          "anything"], capture_output=True, text=True, cwd=tmp_path)
+    assert run.returncode == 0, run.stderr

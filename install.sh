@@ -5,10 +5,9 @@
 #   ./install.sh --project                    # skill into ./.agents/skills
 #   ./install.sh --dest ~/.claude/skills
 #   ./install.sh --store home                 # skip the storage question
-#   ./install.sh --no-hook                    # do not touch settings.json
 #   ./install.sh --no-store                   # install the skill and nothing else
 #   ./install.sh --check                      # what is installed, and is there anything newer
-#   ./install.sh --interpreter py             # force the command the hooks are run with
+#   ./install.sh --interpreter py             # force the Python the install is verified with
 #
 # By default this installs the latest released tag, not the tip of main, so an
 # install is reproducible and a version number means something. Set
@@ -40,7 +39,6 @@ DEST=""
 SCOPE="user"
 STORE_MODE="${PROJECT_MEMORY_STORE:-}"
 NO_STORE=0
-NO_HOOK=0
 CHECK=0
 PYTHON="${PROJECT_MEMORY_PYTHON:-}"
 
@@ -50,10 +48,9 @@ while [ $# -gt 0 ]; do
     --dest)     DEST="${2:?--dest needs a path}"; shift 2 ;;
     --store)    STORE_MODE="${2:?--store needs gitignored|tracked|home}"; shift 2 ;;
     --no-store) NO_STORE=1; shift ;;
-    --no-hook)  NO_HOOK=1; shift ;;
     --check)    CHECK=1; shift ;;
     --interpreter) PYTHON="${2:?--interpreter needs a command}"; shift 2 ;;
-    -h|--help)  sed -n '2,33p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -70,10 +67,10 @@ fi
 command -v git >/dev/null || { echo "git is required" >&2; exit 1; }
 
 # `python3` is not a command name you can count on. On Windows the installer puts
-# `python`, `py` and `pymanager` on PATH and no `python3` at all — so a hook
-# registered as `python3 ...` silently never runs there, which means the agent is
-# never told it has a memory and the write guard blocks nothing. Resolve it once,
-# here, and write whatever actually works into settings.json.
+# `python`, `py` and `pymanager` on PATH and no `python3` at all. Resolve a
+# working interpreter once, here, so the install can be verified with it; the
+# agent runs the scripts with whatever `python3` its shell has, and the pointer
+# files say so.
 if [ -z "$PYTHON" ]; then
   for candidate in python3 python "py -3"; do
     # shellcheck disable=SC2086
@@ -134,9 +131,6 @@ git clone --depth 1 --branch "$REF" "$REPO" "$tmp/src" >/dev/null 2>&1
 mkdir -p "$DEST"
 rm -rf "${DEST:?}/$NAME"
 cp -R "$tmp/src/skills/$NAME" "$DEST/$NAME"
-# The hook travels with the skill: session_start.py resolves its sibling
-# scripts/ directory, so it works from wherever the skill was installed.
-cp -R "$tmp/src/hooks" "$DEST/$NAME/hooks"
 echo "skill:     $DEST/$NAME  ($REF, version $(installed_version "$DEST"))"
 
 # Claude Code reads .claude/skills; point it at the same directory rather than
@@ -161,65 +155,6 @@ $PYTHON "$DEST/$NAME/scripts/memory_search.py" --help >/dev/null \
 # The verification run leaves bytecode behind; drop it so the install is exactly
 # the files from the repository.
 rm -rf "$DEST/$NAME/scripts/__pycache__"
-
-# ── the hooks ────────────────────────────────────────────────────────────────
-# Installed as a plugin, the agent picks up hooks/hooks.json by itself. Installed
-# this way there is no plugin system, so the hooks are registered in
-# settings.json directly. Three of them, and they do different jobs:
-#
-#   SessionStart  tells the agent it has a memory before the first turn, which is
-#                 the whole difference between "remember to mention it" and it
-#                 just working.
-#   PreToolUse    denies a hand-written page, so the validating write path is the
-#                 only way in. Without it, "writes are refused, not requested" is
-#                 itself a request: the ordinary Write tool walks around the gate.
-#   Stop          reminds a session that changed several files and recorded no
-#                 page — once, as feedback the agent acts on, not as an error.
-#                 "Write after meaningful work" was the one rule left in prose.
-if [ "$NO_HOOK" != "1" ]; then
-  if [ "$SCOPE" = "project" ]; then settings="$PWD/.claude/settings.json"; else settings="$HOME/.claude/settings.json"; fi
-  mkdir -p "$(dirname "$settings")"
-  START_CMD="$PYTHON \"$DEST/$NAME/hooks/session_start.py\"" \
-  GUARD_CMD="$PYTHON \"$DEST/$NAME/hooks/write_guard.py\"" \
-  STOP_CMD="$PYTHON \"$DEST/$NAME/hooks/session_stop.py\"" \
-  SETTINGS="$settings" $PYTHON - <<'PY'
-import json, os
-from pathlib import Path
-
-path = Path(os.environ["SETTINGS"])
-data = {}
-if path.exists():
-    try:
-        data = json.loads(path.read_text(encoding="utf-8") or "{}")
-    except json.JSONDecodeError:
-        print("settings:  existing settings.json is not valid JSON — hooks NOT added",
-              flush=True)
-        raise SystemExit(0)
-
-WANTED = [
-    ("SessionStart", "project-memory-session-start",
-     "startup|clear|compact|resume", os.environ["START_CMD"]),
-    ("PreToolUse", "project-memory-write-guard",
-     "Write|Edit|MultiEdit|NotebookEdit", os.environ["GUARD_CMD"]),
-    ("Stop", "project-memory-session-stop", None, os.environ["STOP_CMD"]),
-]
-
-hooks = data.setdefault("hooks", {})
-for event, managed_id, matcher, cmd in WANTED:
-    # Idempotent: replace our own entry, never touch anyone else's.
-    entries = [e for e in hooks.get(event, [])
-               if not any(h.get("_managed_id") == managed_id
-                          for h in e.get("hooks", []))]
-    entry = {"hooks": [{"_managed_id": managed_id, "type": "command", "command": cmd}]}
-    if matcher:  # Stop has nothing to match on
-        entry = {"matcher": matcher, **entry}
-    entries.append(entry)
-    hooks[event] = entries
-
-path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-print(f"hooks:     session-start, write-guard and session-stop registered in {path}")
-PY
-fi
 
 [ "$NO_STORE" = "1" ] && { echo; echo "Store not created (--no-store)."; exit 0; }
 

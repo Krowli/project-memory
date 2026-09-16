@@ -75,8 +75,11 @@ so plainly rather than dressing up the nearest page, then proceed from the code.
 
 Record after: an architectural decision, a non-obvious bugfix, a new domain
 concept, or a contract change. Skip: typos, reverts, formatting, test-only edits.
-If a turn ends with three or more files changed and no page written this
-session, a hook says so once; "nothing to record" is a complete answer to it.
+
+Before you report the work done, ask one question: did it change three or more
+files? If so, either write the page now or say in one line that there is
+nothing worth keeping. Nothing will remind you; this is the rule, on every
+agent.
 
 ```bash
 python3 scripts/memory_write.py --slug webgl-context-loss \
@@ -98,8 +101,10 @@ executed by the shell. To pass a long body without a heredoc at all, write it to
 a file and use `--body - < page.md`.
 
 **The script refuses a page that is not worth keeping**, exits non-zero and
-prints a `FIX:` line naming the exact next command. Follow that line — writing
-the markdown file directly is denied by a hook. Refusals:
+prints a `FIX:` line naming the exact next command. Follow that line rather than
+writing the markdown file directly: search applies the same floor on read, so a
+page written around the script is skipped and named while it is under 200
+characters, and marked `⚠ no sources` while it has none. Refusals:
 
 - no `--source`, or a `--source` path that does not exist on disk
 - a resulting page under 200 characters — at that length a page is restating what

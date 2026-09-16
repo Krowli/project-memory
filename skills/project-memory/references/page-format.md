@@ -1,9 +1,10 @@
 # Page format
 
-One file per topic at `.memory/<slug>.md`, written by `memory_write.py`. Do not
-write these files by hand: the script validates them, and hand-edited
-frontmatter is the one input the parser cannot round-trip. A `PreToolUse` hook
-denies a direct Write or Edit to a page and names the command instead.
+One file per topic at `.memory/<slug>.md`, written by `memory_write.py`. Write
+them through the script: it validates them, and hand-edited frontmatter is the
+one input the parser cannot round-trip. A page written by hand is still read,
+but search skips it while it is under 200 characters and marks it while it has
+no sources, and names it so it can be rewritten through the script.
 
 Frontmatter is YAML-ish and parsed leniently. This is the contract:
 

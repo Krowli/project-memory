@@ -17,20 +17,34 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (0.986, paired +0.441 [+0.349, +0.539]). Without the flag nothing changes,
   and the existing tables did not move. Sources are not in the index, so a
   `--touching` search reads every page.
-- **A `Stop` hook for the write side.** The session-start hook closed "the agent
-  did not know it had a memory"; "write after meaningful work" stayed a rule in
-  prose, and on a small task set an agent told to read and apply memory wrote
-  nothing in ten tasks. `hooks/session_stop.py` now speaks when Claude finishes
-  a turn with three or more changed files in `git status` and no page written by
-  this session — once per session, as `additionalContext`, which Claude Code
-  delivers as feedback the agent acts on rather than a blocking error. It reads
-  the working tree, so committed work is invisible to it, and it never creates
-  a store. Registered in `hooks/hooks.json` and by `install.sh`.
+- **The write gate runs on read.** A page that arrived around `memory_write.py`
+  and is under 200 characters is not ranked; search names it on stderr and in
+  `--json` so it can be rewritten through the script. A page with no sources is
+  shown, marked `⚠ no sources`. `MIN_BODY` moved to `memory_lib` so writer and
+  reader share one floor. Search runs on every agent the skill is installed in,
+  which is what makes it the place for the check.
 - Every log line carries the session id Claude Code exports to the Bash tool
-  (`CLAUDE_CODE_SESSION_ID`), the Stop hook records one `stop` line per turn,
-  and `memory_stats.py` reports sessions that changed the tree and recorded
-  nothing, reminders sent, and writes per session — the numbers that decide
-  whether the hook earns its place, which the log could not answer before.
+  (`CLAUDE_CODE_SESSION_ID`), and `memory_stats.py` reports sessions, sessions
+  that searched and never wrote, and writes per session — the write side's
+  "did it happen", collected by the scripts themselves.
+- `evals/acceptance.py`: a real session of the agent you name, a question only
+  the store answers, and a check of the store's log for the search. The only
+  proof that an agent uses the memory unprompted; run it per harness.
+- `docs/research/`: primary-source notes behind decisions, starting with how
+  superpowers stays portable across thirteen harnesses.
+
+### Removed
+
+- **The three Claude Code hooks.** SessionStart announced the memory,
+  PreToolUse denied a hand-written page, Stop reminded a session that changed
+  files and wrote nothing — and every one existed on one harness while the
+  skill claims to work on any. `hooks/` is gone, `install.sh` no longer writes
+  `settings.json` (`--no-hook` with it), and the Cursor manifest declares no
+  hooks. Announcing the memory is the skill `description`, the context files
+  and the `AGENTS.md` snippet, the way superpowers runs on Codex, Devin and
+  Grok; the gate moved to read; the reminder became a finishing rule in
+  `SKILL.md` and the pointer files. See `.memory/scripts-carry-the-contract-not-hooks.md`.
+
 ### Changed
 
 - `evals/dense_probe.py --static MODEL` runs the hybrid over a model2vec static

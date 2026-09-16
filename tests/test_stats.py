@@ -73,37 +73,38 @@ def test_json_output_is_machine_readable(logged, capsys):
 
 
 @pytest.fixture()
-def sessions(tmp_path):
-    """What the Stop hook leaves behind: one line per turn, the last one per
-    session being the state the session ended in."""
+def sessions(tmp_path, monkeypatch):
+    """Three sessions, told apart by the id the harness exports to the shell the
+    scripts run in: s1 searched and wrote, s2 searched three times and never
+    wrote, s3 only wrote. The suite may itself run inside such a session, so
+    the stamp the environment would add is switched off here."""
+    monkeypatch.delenv(memory_lib.SESSION_ENV, raising=False)
     store = tmp_path / ".memory"
     store.mkdir()
     for event in [
+        {"event": "search", "query": "pty", "hits": 1, "top": "a", "session": "s1"},
         {"event": "write", "slug": "a", "mode": "create", "chars": 400, "session": "s1"},
-        {"event": "stop", "session": "s1", "changed": 5, "writes": 0, "notable": True,
-         "nudged": True},
-        {"event": "stop", "session": "s1", "changed": 6, "writes": 1, "notable": True,
-         "nudged": False},
-        {"event": "stop", "session": "s2", "changed": 4, "writes": 0, "notable": True,
-         "nudged": True},
-        {"event": "stop", "session": "s3", "changed": 1, "writes": 0, "notable": False,
-         "nudged": False},
+        {"event": "search", "query": "pty", "hits": 1, "top": "a", "session": "s2"},
+        {"event": "search", "query": "ws", "hits": 0, "top": None, "session": "s2"},
+        {"event": "search", "query": "id", "hits": 1, "top": "a", "session": "s2"},
+        {"event": "write", "slug": "b", "mode": "create", "chars": 500, "session": "s3"},
+        {"event": "search", "query": "no session", "hits": 0, "top": None},
     ]:
         memory_lib.log_event(store, event.pop("event"), **event)
     return store
 
 
-def test_sessions_that_changed_things_and_recorded_nothing_are_counted(sessions):
-    """The one number the Stop hook is there to move. Judged on how the session
-    ended, not on any turn in the middle: s1 was nudged and then wrote."""
+def test_sessions_that_searched_and_never_wrote_are_counted(sessions):
+    """The write side's number, with no hook to collect it: a session that read
+    the memory and left nothing behind. Events without a session id are not a
+    session — another harness, or an older log."""
     s = memory_stats.summarise(memory_stats.read_log(sessions, None))
     assert s["sessions"] == 3
     assert s["sessions_unrecorded"] == 1
-    assert s["nudges"] == 2
-    assert s["writes_per_session"] == round(1 / 3, 3)
+    assert s["writes_per_session"] == round(2 / 3, 3)
 
 
 def test_sessions_are_printed(sessions, capsys):
     memory_stats.main(["--store", str(sessions)])
     out = capsys.readouterr().out
-    assert "sessions" in out and "recorded nothing" in out
+    assert "sessions" in out and "never wrote" in out

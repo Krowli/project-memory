@@ -16,22 +16,29 @@ def store(tmp_path):
     return d
 
 
+# Pages under MIN_BODY are skipped by search on purpose, so every fixture page
+# that has to be found carries enough body to be a page the writer would accept.
+FILLER = ("\n\nRecorded so the next agent does not rediscover it: the cause sits far "
+          "from the symptom, the fix is two lines, and the alternative was rejected "
+          "for a reason that is not visible in the code.\n")
+
+
 @pytest.fixture()
 def populated(store):
     import memory_write
     memory_write.write_page(
         store, "webgl-context-loss", "xterm WebGL context loss on display sleep",
         "bug", ["src/terminal/renderer.ts"],
-        "## Cause\n\nThe WebGL renderer loses its context when the display sleeps.\n")
+        "## Cause\n\nThe WebGL renderer loses its context when the display sleeps." + FILLER)
     memory_write.write_page(
         store, "command-palette-highlight", "Command palette match highlighting",
         "concept", [],
-        "## Context\n\nFuzzy match ranges are highlighted in the palette.\n")
+        "## Context\n\nFuzzy match ranges are highlighted in the palette." + FILLER)
     # Bilingual page: the corpus mixes Russian and English.
     memory_write.write_page(
         store, "sqlite-writer-ownership", "Кто пишет в coordination.db",
         "decision", ["src-tauri/src/database.rs"],
-        "## Решение\n\nТолько MCP сервер пишет в базу. Frontend uses Tauri commands.\n")
+        "## Решение\n\nТолько MCP сервер пишет в базу. Frontend uses Tauri commands." + FILLER)
     return store
 
 

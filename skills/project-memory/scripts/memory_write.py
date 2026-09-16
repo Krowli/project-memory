@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from memory_lib import (
+    MIN_BODY,
     VERSION,
     StoreUnavailable,
     atomic_write,
@@ -47,12 +48,10 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 # was worth reading.
 KINDS = ("decision", "bug", "concept", "howto")
 
-# Below this, a page is restating what the source file already says. Tuned to
-# the stub population it is meant to exclude (bodies around 139 characters).
-# Measured against the resulting page, not against one write: an amendment that
-# records a reversal is the cheapest and most valuable write in the system, and
-# a floor on the increment forbade exactly that.
-MIN_BODY = 200
+# MIN_BODY lives in memory_lib, shared with the reader. It is measured against
+# the resulting page, not against one write: an amendment that records a
+# reversal is the cheapest and most valuable write in the system, and a floor on
+# the increment forbade exactly that.
 
 # Frontmatter this script owns, in emission order. Everything else a page
 # carries is preserved untouched — rebuilding from a fixed whitelist silently
