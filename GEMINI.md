@@ -14,8 +14,9 @@ python3 ~/.agents/skills/project-memory/scripts/memory_search.py "your query"
 Query words are OR'd and ranked, so give several — `terminal freeze webgl
 context lost` works better than one word. The first output line is the store's
 absolute path; open a full page with `cat <that path>/<slug>.md`. A hit marked
-`⚠ superseded by <slug>` was replaced — read the replacement first. If nothing
-relevant comes back, say so rather than guessing.
+`⚠ superseded by <slug>` was replaced — read the replacement first. Add
+`--touching <path>` to put the pages written against a file you are about to
+change first. If nothing relevant comes back, say so rather than guessing.
 
 The trigger is the kind of claim you are about to make, not the wording of the
 question; "how does X work" and "what do you know about this project" are

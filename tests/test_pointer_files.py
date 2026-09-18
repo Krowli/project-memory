@@ -72,3 +72,41 @@ def test_the_projects_own_store_is_tracked_on_purpose():
     marker is what stops the scripts from gitignoring it behind the author."""
     assert (REPO / ".memory" / ".tracked").is_file()
     assert ".memory/" not in (REPO / ".gitignore").read_text(encoding="utf-8")
+
+
+# The block a user adds to their own agent's configuration. It ships inside the
+# skill (install.sh copies `skills/project-memory/` and nothing else), so an
+# agent that can include a file by path can point at the installed copy instead
+# of carrying a transcription that goes stale on the next release.
+SNIPPET = "skills/project-memory/USE.md"
+
+
+def test_the_snippet_ships_with_the_skill():
+    """At the repository root it reaches nobody: the installer copies the skill
+    directory alone, and a plugin install ships whatever the manifest points at."""
+    assert (REPO / SNIPPET).is_file()
+    assert SNIPPET.startswith("skills/project-memory/")
+
+
+def test_the_root_agents_file_and_the_shipped_snippet_are_the_same_text():
+    """Two copies of one contract drift, and the one that drifts is the one
+    nobody opens. A byte comparison is the cheapest thing that prevents it."""
+    assert (REPO / "AGENTS.md").read_text(encoding="utf-8") == \
+        (REPO / SNIPPET).read_text(encoding="utf-8")
+
+
+def test_the_snippet_stamps_the_version_it_was_copied_from():
+    """A pasted copy cannot be updated from here, so it has to say how old it is.
+    Claude Code strips block-level HTML comments before injection, so the stamp
+    costs the agent no context and is still visible to whoever pasted it."""
+    import memory_lib
+    head = (REPO / SNIPPET).read_text(encoding="utf-8")[:400]
+    assert f"project-memory {memory_lib.VERSION}" in head
+
+
+def test_the_readme_include_line_names_a_file_that_exists():
+    """The one line a user is told to add. If its path is wrong the whole
+    mechanism is silent — nothing errors, the agent simply never sees the block."""
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert "@~/.agents/skills/project-memory/USE.md" in readme
+    assert (REPO / SNIPPET).is_file()

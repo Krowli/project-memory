@@ -17,9 +17,17 @@ project, links the skill where the harness discovers skills (`.agents/skills/`,
 which Codex, Cursor, Gemini and Copilot read; Claude Code gets `--plugin-dir`),
 runs the agent command once with a question only the store can answer, and then
 reads the store's log. PASS means at least one search event landed before the
-agent answered. With `--pointer` the project also carries the `AGENTS.md`
-snippet, which is the documented integration for a harness that does not surface
-skill descriptions.
+agent answered.
+
+`--pointer` chooses how the instruction block reaches the agent, which is the
+thing the README tells a user to set up:
+
+  none      nothing but the skill itself; the description in the harness's skill
+            index is the only trigger
+  paste     the block transcribed into the project's CLAUDE.md, what a user does
+            on a harness with no import syntax
+  include   a one-line `@path` import of the installed USE.md, what a user does
+            on Claude Code and Gemini — the line the README claims works
 
 `{prompt}`, `{project}` and `{repo}` are substituted into the agent command.
 The command is split with shlex, so quote as you would in a shell.
@@ -50,7 +58,7 @@ QUESTION = ("This project's terminal does not use the graphics card to draw by d
 RELEVANT = "render-canvas-default-renderer"
 
 
-def build_project(directory: Path, pointer: bool) -> Path:
+def build_project(directory: Path, pointer: str) -> Path:
     project = directory / "project"
     project.mkdir()
     (project / "src").mkdir()
@@ -60,10 +68,16 @@ def build_project(directory: Path, pointer: bool) -> Path:
     skills = project / ".agents" / "skills"
     skills.mkdir(parents=True)
     (skills / "project-memory").symlink_to(REPO / "skills" / "project-memory")
-    if pointer:
-        snippet = (REPO / "AGENTS.md").read_text(encoding="utf-8")
+    use = REPO / "skills" / "project-memory" / "USE.md"
+    if pointer == "paste":
+        snippet = use.read_text(encoding="utf-8")
         snippet = snippet.replace("~/.agents/skills/", ".agents/skills/")
+        (project / "CLAUDE.md").write_text(snippet, encoding="utf-8")
         (project / "AGENTS.md").write_text(snippet, encoding="utf-8")
+    elif pointer == "include":
+        # The path is absolute here because the skill under test is this working
+        # tree rather than an install; a user writes the ~/ form the README gives.
+        (project / "CLAUDE.md").write_text(f"@{use}\n", encoding="utf-8")
     return project
 
 
@@ -84,8 +98,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--agent", required=True,
                     help="agent command with {prompt}, {project} and {repo} placeholders")
-    ap.add_argument("--pointer", action="store_true",
-                    help="also drop the AGENTS.md snippet into the project")
+    ap.add_argument("--pointer", choices=("none", "paste", "include"), default="none",
+                    help="how the instruction block reaches the agent (default: none)")
     ap.add_argument("--question", default=QUESTION)
     ap.add_argument("--keep", action="store_true", help="leave the project on disk")
     ap.add_argument("--timeout", type=int, default=600)
@@ -114,7 +128,7 @@ def main(argv=None) -> int:
     mentions = RELEVANT.split("-")[1] in answer.lower()  # "canvas"
 
     print(f"agent      {' '.join(cmd[:2])}  (exit {proc.returncode}, {elapsed:.0f}s)")
-    print(f"project    {project}  pointer={'yes' if args.pointer else 'no'}")
+    print(f"project    {project}  pointer={args.pointer}")
     print(f"searches   {len(searches)}" + (f"   first: {searches[0].get('query')!r}"
                                            if searches else ""))
     print(f"writes     {len(writes)}")

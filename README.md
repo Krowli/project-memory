@@ -112,7 +112,7 @@ At runtime the scripts resolve the store as `$PROJECT_MEMORY_DIR` if set,
 otherwise the nearest `.memory/` walking up from the working directory — so the
 `home` mode's symlink works with no extra configuration.
 
-## Make it automatic: one paste per agent
+## Make it automatic: one line per agent
 
 There are no hooks. Earlier versions carried three Claude Code hooks — announce
 the memory at session start, deny a hand-written page, remind a session that
@@ -122,36 +122,48 @@ memory the way it learns any skill exists: from the skill's `description`,
 which every harness that discovers skills shows the model at session start,
 and from the instruction file it reads on every turn.
 
-The skill's description is already in place once the skill is installed. The
-instruction file is the one thing you do by hand, once: paste the contents of
-this repository's [`AGENTS.md`](AGENTS.md) into the file your agent reads for
-every project. It says when to search, when to write, and with which command.
+The description is in place as soon as the skill is installed. The instruction
+file is the one thing you do by hand, once. The block lives inside the skill at
+`skills/project-memory/USE.md`, so it travels with every install; where an agent
+can include a file by path, point at it rather than copying it, because a copy
+goes stale on the next release and nothing says so.
 
-| agent | global file, applies to every project | per-project alternative |
+| agent | file to edit | what to add |
 |---|---|---|
-| Claude Code | `~/.claude/CLAUDE.md` | `<repo>/CLAUDE.md` |
-| Codex CLI | `~/.codex/AGENTS.md` | `<repo>/AGENTS.md` |
-| Gemini CLI | `~/.gemini/GEMINI.md` — optional: the extension already ships `GEMINI.md` as its context file | `<repo>/GEMINI.md` |
-| Cursor | Customize → Rules (User Rules) | `<repo>/AGENTS.md` |
-| anything else | its user-level instruction file | `<repo>/AGENTS.md` |
+| Claude Code | `~/.claude/CLAUDE.md` | `@~/.agents/skills/project-memory/USE.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` | `@~/.agents/skills/project-memory/USE.md` |
+| Codex CLI | `~/.codex/AGENTS.md` | the contents of `USE.md` — Codex documents no import syntax |
+| Cursor | Customize → Rules | the contents of `USE.md` — the field takes text, not a path |
 
-Paths come from each vendor's documentation: Claude Code's user memory file,
-Codex's `~/.codex/AGENTS.md` (concatenated with the repository's own from the
-root down), Gemini's "default instructions for all your projects", Cursor's
-"global preferences that apply across all projects". The snippet's script path
-is the global install location; with `--project` it is
-`.agents/skills/project-memory/scripts/`, and in a clone of this repository
-`skills/project-memory/scripts/`.
+Claude Code expands `@path` imports, home-relative paths included, up to four
+hops deep, and loads them from a user-scope file without an approval dialog.
+Gemini CLI does the same with `@` in `GEMINI.md`. Adjust the path if you did not
+install to the default location: `--project` puts the skill in
+`.agents/skills/project-memory/`, and a clone of this repository has it at
+`skills/project-memory/`.
+
+**Where you put it decides who uses it**, which is the whole configuration
+surface:
+
+- one agent's or subagent's own description — only that agent searches and
+  writes, which is what you want for a researcher or an analyst role;
+- the project's `CLAUDE.md` or `AGENTS.md` — every agent working in that
+  project, including subagents an orchestrator spawns there;
+- the global file in the table — every agent in every project on the machine.
+
+The store itself is per project, `.memory/` at its root, and every agent working
+in that project shares it. One store for several projects is `--store home` or
+`$PROJECT_MEMORY_DIR`.
 
 This is how superpowers, the most widely installed skills library, runs on
 Codex, Devin and Grok — nothing injected, the skill index is the trigger — and
 it removed its own Codex hook because the native index worked better. The
 survey, by primary sources, is in `docs/research/superpowers-portability.md`.
 
-Whether an agent actually searches when nobody reminds it is the one thing a
-paste cannot guarantee, on any harness. `evals/acceptance.py` is the proof: a
-real session of the agent you name, a question only the store answers, and a
-check of the store's log for the search. See [Measured](#measured).
+Whether an agent actually searches when nobody reminds it is the one thing this
+cannot guarantee, on any harness. `evals/acceptance.py` is the proof: a real
+session of the agent you name, a question only the store answers, and a check of
+the store's log for the search. See [Measured](#measured).
 
 **On Windows, mind the interpreter name.** `python3` is not a command Windows
 has: the installer puts `python`, `py` and `pymanager` on PATH. The snippet
@@ -344,13 +356,17 @@ model cannot confabulate about; read the unanswerable row as an upper bound.
 `evals/acceptance.py`, 2026-09-16, no hook anywhere, no pointer file in the
 project, one question only the store answers.
 
-| agent | searches before answering | outcome | time |
+| how the agent was told | searches before answering | outcome | time |
 |---|---|---|---|
-| Claude Code, skill via `--plugin-dir`, user settings excluded | 2 | answer named the decision | 19 s |
-| Codex CLI 0.153, skill via `.agents/skills`, user config and rules ignored | 1 | answer named the decision and followed the `superseded by` marker to the reversal | 24 s |
+| Claude Code, skill registered, no instruction file | 2 | answer named the decision | 19 s |
+| Codex CLI 0.153, skill registered, user config and rules ignored | 1 | answer named the decision and followed the `superseded by` marker to the reversal | 24 s |
+| Claude Code, **no skill registered**, one `@path` line in the project's `CLAUDE.md` | 1 | answer named the decision and its reversal | 24 s |
 
-One run each, one question. Gemini, Cursor, Kimi, Copilot, OpenCode and Pi are
-unmeasured until someone runs the same command there.
+The third row is the one-line include on its own: nothing was registered with
+the harness, and the import alone carried the instruction far enough for the
+agent to search before answering. One run each, one question. Gemini, Cursor,
+Kimi, Copilot, OpenCode and Pi are unmeasured until someone runs the same
+command there.
 
 ### Speed, and the cost of the gate
 
