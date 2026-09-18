@@ -18,6 +18,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.11", "3.13"]
+        include:
+          # 3.9 is the floor because it is what a stock macOS ships, so the
+          # floor has to be tested rather than declared. actions/python-versions
+          # has no darwin-arm64 or win32 build of 3.9, hence macos-13 (Intel)
+          # and no Windows row: on Windows a user installs Python anyway and
+          # gets a current one.
+          - os: ubuntu-latest
+            python: "3.9"
+          - os: macos-13
+            python: "3.9"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

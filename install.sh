@@ -74,14 +74,14 @@ command -v git >/dev/null || { echo "git is required" >&2; exit 1; }
 if [ -z "$PYTHON" ]; then
   for candidate in python3 python "py -3"; do
     # shellcheck disable=SC2086
-    if $candidate -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' \
+    if $candidate -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' \
          >/dev/null 2>&1; then
       PYTHON="$candidate"
       break
     fi
   done
 fi
-[ -n "$PYTHON" ] || { echo "no Python 3.11+ found (tried python3, python, py -3)" >&2; exit 1; }
+[ -n "$PYTHON" ] || { echo "no Python 3.9+ found (tried python3, python, py -3)" >&2; exit 1; }
 
 # The latest released tag, or empty if the repository has never been tagged. A
 # `curl | bash` install used to take the tip of main, so two people running the

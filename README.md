@@ -5,9 +5,10 @@ post-mortems as **markdown pages on disk**, searchable without a server.
 
 No server, no daemon, no API key, no hooks. The store is a `.memory/` directory
 of `.md` files — greppable, diffable, reviewable in a pull request, and readable
-by any agent or human. The runtime is Python 3.11+ standard library only, and
-the same scripts run under Claude Code, Codex, Cursor, Gemini CLI, Kimi and
-anything else that can run a shell command.
+by any agent or human. The runtime is Python 3.9+ standard library only — the
+version a stock macOS already ships — and the same scripts run under Claude
+Code, Codex, Cursor, Gemini CLI, Kimi and anything else that can run a shell
+command.
 
 Search keeps a SQLite FTS5 index as a **cache**, in your cache directory rather
 than in the store, and never in git. Delete it whenever you like: it rebuilds
@@ -428,7 +429,7 @@ same file loads in Claude Code and uploads to claude.ai unchanged. A CI test
 enforces that restriction. The Claude Code path is checked in CI on every push
 to `main`: `claude plugin validate --strict` for the manifests and the Agent
 Skills spec validator for `SKILL.md`. The Python is tested on Ubuntu, macOS and
-Windows against Python 3.11 and 3.13, on both retrieval paths.
+Windows against Python 3.11 and 3.13, and against 3.9 on Linux and Intel macOS, on both retrieval paths.
 
 ## Contributing
 

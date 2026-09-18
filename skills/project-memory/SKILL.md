@@ -2,7 +2,7 @@
 name: project-memory
 description: Durable project memory as markdown pages on disk. Use before answering any question whose answer describes this project — what it is, what it does, how a subsystem works, why it was built that way, what was decided or rejected ("why did we...", "what did we decide about...", "what do you know about this project") — and before starting work on an unfamiliar part of the codebase. Project instruction files (AGENTS.md, CLAUDE.md, README) already in context are not a substitute. Also use when the user asks to remember something, and after a non-trivial bugfix, refactor, or architectural decision, to write the page.
 license: MIT
-compatibility: Requires Python 3.11+. No network access and no API keys needed.
+compatibility: Requires Python 3.9+, which is what a stock macOS already has. No network access and no API keys needed.
 metadata:
   repository: https://github.com/Krowli/project-memory
   version: "0.3.0"

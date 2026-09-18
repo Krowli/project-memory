@@ -8,6 +8,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The Python floor drops from 3.11 to 3.9**, which is what a stock macOS
+  already ships — until now `install.sh` refused the interpreter at
+  `/usr/bin/python3`, so the skill would not run on a Mac without a Python
+  installed first. The floor was never earned: the five scripts carry no 3.10 or
+  3.11 construct, all of them already use `from __future__ import annotations`,
+  and the whole suite passes under 3.9.6. CI now runs 3.9 on Linux and Intel
+  macOS alongside 3.11 and 3.13 (GitHub publishes no 3.9 build for arm64 macOS
+  or Windows), and a test fails if the four places that declare the floor drift
+  apart. Windows, which ships no Python at all, stays a documented prerequisite.
 - README rewritten around the three questions people ask first: is the skill
   global or local (global by default, the store is always per project), how to
   make an agent keep the memory without hooks (one paste into the agent's

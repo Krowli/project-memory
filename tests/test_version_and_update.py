@@ -67,6 +67,22 @@ def test_the_installer_reports_what_is_installed_and_what_is_newer(tmp_path):
     assert "latest:" in proc.stdout
 
 
+def test_the_python_floor_is_declared_the_same_everywhere():
+    """Four files state the minimum interpreter, and one of them enforces it. A
+    floor that drifts either refuses an interpreter the code runs on — which is
+    what kept the skill off a stock macOS — or accepts one it does not."""
+    floor = "3.9"
+    minor = floor.split(".")[1]
+    pyproject = (REPO / "pyproject.toml").read_text(encoding="utf-8")
+    assert f'requires-python = ">={floor}"' in pyproject
+    assert f'target-version = "py3{minor}"' in pyproject
+    skill = (REPO / "skills" / "project-memory" / "SKILL.md").read_text(encoding="utf-8")
+    assert f"Python {floor}+" in skill
+    installer = INSTALL.read_text(encoding="utf-8")
+    assert f"sys.version_info >= (3, {minor})" in installer
+    assert f"no Python {floor}+ found" in installer
+
+
 def test_the_installer_prefers_a_released_tag_over_the_branch():
     """The default used to be `main`, so an install was whatever had landed that
     hour and a version number meant nothing."""
