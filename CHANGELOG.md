@@ -85,6 +85,16 @@ Codex, Cursor, Kimi   remove the directory you pointed them at
 The marketplace entry is gone too, so `/plugin marketplace add Krowli/project-memory`
 now 404s. Tag `v0.3.5` is the final plugin release and stays installable.
 
+**This cost something measurable, and here is the number.** A registered skill
+directory gave a harness a description to index, and that description alone made
+the agent search before answering in **15 of 15** sessions with no instruction line
+anywhere. With nothing registered and no line, it is **0 of 15**. So the packaging
+was not dead weight; it was a working fallback for the user who installs and then
+connects nothing. The recommended setup is 15/15 either way, which is why the trade
+was made, and three things now cover the gap that did not exist before: `lore init`
+runs at install time and offers the line, `lore doctor` calls an unconnected
+install a fault rather than a neutral state, and a bare `lore` says so in one line.
+
 ### What you get for it
 
 - The command an agent runs is `lore search "…"`, with no path in it. It is correct

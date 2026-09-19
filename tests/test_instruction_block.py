@@ -58,6 +58,23 @@ def test_renaming_the_command_leaves_the_heredoc_terminator_alone():
     assert "pagelore search" in renamed
 
 
+def test_the_bare_command_says_so_when_nothing_is_connected(tmp_path, monkeypatch):
+    """Measured: fifteen sessions with the block reachable searched before answering
+    fifteen times, and fifteen with nothing connected searched never. Before 0.4.0 a
+    copied skill directory gave a harness something to index, and fifteen sessions
+    with only that — no instruction line at all — still searched, so dropping the
+    packaging removed a fallback that worked. This line is the replacement: it costs
+    one `is_file()` on the one surface a person reads."""
+    from pagelore.cli import usage
+
+    monkeypatch.setenv(instructions.HOME_ENV, str(tmp_path / "nothing-here"))
+    assert "Run `lore init`" in usage("lore")
+
+    monkeypatch.setenv(instructions.HOME_ENV, str(tmp_path / "connected"))
+    instructions.install("lore")
+    assert "Run `lore init`" not in usage("lore")
+
+
 def test_a_refresh_never_creates_the_directory_it_writes_into(tmp_path, monkeypatch):
     """Its existence is the opt-in signal. A search run in a project that never
     asked for any of this must not leave a directory in $HOME — the same rule that

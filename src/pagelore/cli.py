@@ -63,6 +63,18 @@ def add_version(ap: argparse.ArgumentParser) -> None:
 
 
 def usage(prog: str = "lore") -> str:
+    """The command list, plus one line when nothing is connected yet.
+
+    That line is paid for by a measurement. Fifteen sessions with the instruction
+    block reachable searched before answering fifteen times; fifteen with nothing
+    connected searched never. Before 0.4.0 a copied skill directory gave a harness
+    something to index, and that alone was enough to make the agent search — so
+    dropping the packaging removed a fallback, and this is the cheapest honest
+    replacement: one `is_file()` check, on the one surface a person reads and an
+    agent does not depend on.
+    """
+    from pagelore import instructions
+    connected = instructions.block_path().is_file()
     return "\n".join([
         f"{prog} — durable project memory as markdown pages on disk",
         "",
@@ -75,7 +87,11 @@ def usage(prog: str = "lore") -> str:
         f"  {prog} uninstall                                    disconnect it again",
         "",
         f"{prog} <command> --help for the flags of one command.",
-    ])
+    ] + ([] if connected else [
+        "",
+        f"Nothing is connected yet, so no agent knows this exists. Run `{prog} init`;",
+        f"`{prog} doctor` says what is missing.",
+    ]))
 
 
 def main(argv: list[str] | None = None) -> int:

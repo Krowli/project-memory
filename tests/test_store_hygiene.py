@@ -67,7 +67,7 @@ def test_a_refused_write_still_shields_the_store_it_creates(tmp_path):
 
 
 def test_a_dangling_store_symlink_is_refused_not_crashed(tmp_path):
-    """`install.sh --store home` symlinks the store. If the target is gone, the
+    """`lore init --store home` symlinks the store. If the target is gone, the
     old code raised a raw FileExistsError instead of a REJECTED/FIX line."""
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "real.ts").write_text("export {}")

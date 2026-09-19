@@ -3,24 +3,42 @@ slug: fts5-index-is-a-cache
 title: "Search keeps an FTS5 index, and it is a cache the search may ignore"
 kind: decision
 created: 2026-08-17
-updated: 2026-08-17
+updated: 2026-09-19
 sources:
-  - src/pagelore/index.py
   - evals/run.py
+  - evals/speed.py
+  - src/pagelore/index.py
 ---
 
 ## What the measurement said, and what it did not
 
 The evaluation found the hand-written BM25F and SQLite FTS5 statistically
 indistinguishable (nDCG@10 0.644 against 0.646, paired interval across zero). So
-the migration buys no quality. It buys speed, and only past a certain size: end to
-end as a shell invocation, 235 ms against 99 ms at 90 pages, but 4637 ms against
-196 ms at 5000.
+the migration buys no quality. It buys speed, and only past a certain size.
+
+Re-measured 2026-09-19 with `evals/speed.py`, one search end to end as a fresh
+process, median of seven:
+
+| pages | reading every page | warm index |
+|---|---|---|
+| 90 | 76 ms | 52 ms |
+| 1000 | 341 ms | 69 ms |
+| 5000 | 1507 ms | 139 ms |
 
 The first cost model was wrong in a way worth recording. Timings taken inside the
-process made the index look like a win everywhere; the agent actually pays ~30 ms
-of interpreter startup on every call, which neither design can remove and which
+process made the index look like a win everywhere; the agent actually pays ~45 ms of
+interpreter startup on every call, which neither design can remove and which
 dominates at small corpus sizes.
+
+A second thing is worth recording about the numbers themselves. Until 0.4.0 this
+page and the README carried 235/99, 1887/174 and 4637/196 for the same three sizes,
+and the first column was three to six times higher than the re-measurement. That is
+not the interpreter — the same measurement gives 408 ms on 3.9 and 346 ms on 3.14
+for a thousand pages, and neither is near 1887. The script that produced the
+original figures was never committed, so the discrepancy cannot be chased and the
+old numbers are superseded rather than compared. `evals/speed.py` exists so this
+cannot happen again: it was the one table in this project that could not be
+reproduced.
 
 ## What the migration cost, which was more than expected
 

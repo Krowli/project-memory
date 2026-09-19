@@ -19,7 +19,7 @@ from pathlib import Path
 import conftest
 import pytest
 
-from pagelore import doctor, init, instructions, uninstall
+from pagelore import doctor, init, instructions, uninstall, write
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -131,6 +131,32 @@ def test_the_tracked_store_is_marked_before_the_first_write(machine):
     gitignore = project / ".gitignore"
     if gitignore.exists():
         assert ".memory/" not in gitignore.read_text(encoding="utf-8")
+
+
+def test_the_home_store_symlinks_out_of_the_repo_and_gitignores_the_link(machine):
+    """The third store mode, and the one nothing covered. `lib.py` and `index.py`
+    both carry comments about what it invites — a network filesystem, a dead symlink
+    — so the mode they describe has to exist and work."""
+    home, project = machine
+    code, out = run("", argv=["--store", "home", "--yes"], interactive=False)
+    assert code == 0
+
+    link = project / ".memory"
+    assert link.is_symlink(), "the store is a real directory, not a link out of the repo"
+    target = link.resolve()
+    assert home in target.parents, f"{target} is not under the fake home"
+    assert ".memory/" in (project / ".gitignore").read_text(encoding="utf-8")
+    assert str(target) in out
+
+    # The link has to be writable end to end, or the mode is decorative.
+    (project / "src").mkdir()
+    (project / "src" / "a.ts").write_text("export {}\n", encoding="utf-8")
+    body = ("## Cause\n\n" + "Enough body to clear the two-hundred-character floor that the "
+            "write gate applies, so that the page actually lands in the symlinked store "
+            "rather than being refused long before it ever gets that far at all.\n")
+    assert write.main(["--slug", "probe", "--title", "Probe", "--kind", "bug",
+                       "--source", "src/a.ts", "--body", body]) == 0
+    assert (target / "probe.md").is_file()
 
 
 def test_no_terminal_asks_nothing_stalls_never_and_still_writes_the_block(machine):
