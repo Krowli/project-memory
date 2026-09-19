@@ -129,34 +129,44 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          # A PyPI version is immutable, so a later step failing must not make this
+          # one un-rerunnable. Without it, a tag that got past PyPI and fell over at
+          # npm could never be retried: the retry would die here on a duplicate and
+          # the steps that actually failed would never run again.
+          skip-existing: true
 
   npm:
     name: publish to npm
     needs: [verify, pypi]
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       id-token: write          # provenance, so the tarball is traceable to this run
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: .
 
+      # Published from the package directory with no argument, which packs through
+      # `prepack` on the way. The first attempt passed the pre-built tarball as
+      # `npm/pagelore-0.4.0.tgz`, and npm read that as the git shorthand
+      # `<owner>/<repo>` — it went looking for a GitHub repository called
+      # `npm/pagelore-0.4.0.tgz` and failed on an SSH key. A leading `./` would also
+      # fix it, but publishing the directory is npm's ordinary path and has no spec
+      # to misread at all.
       - name: Publish
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry-run) }}
+        working-directory: npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public npm/pagelore-*.tgz
+        run: npm publish --provenance --access public
 
       - name: Dry run
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
-        run: |
-          tar -tzf npm/pagelore-*.tgz
-          echo "dry run: not published"
+        working-directory: npm
+        run: npm publish --dry-run --access public
 
   github-release:
     name: publish the GitHub release
