@@ -11,8 +11,9 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-SCRIPT = (Path(__file__).resolve().parents[1] / "skills" / "project-memory"
-          / "scripts" / "memory_write.py")
+import conftest
+
+WRITE = [*conftest.LORE, "write"]
 
 WRITERS = 12
 FILLER = ("The reap loop waits on the child before closing the master fd, so a child "
@@ -26,10 +27,10 @@ def test_parallel_writes_to_one_slug_all_survive(tmp_path):
 
     def write(i):
         return subprocess.run(
-            [sys.executable, str(SCRIPT), "--store", str(store), "--slug", "shared",
+            [*WRITE, "--store", str(store), "--slug", "shared",
              "--title", "Shared page", "--kind", "concept", "--source", "src/real.ts",
              "--body", f"## Section {i:02d}\n\n{FILLER}\n"],
-            capture_output=True, text=True, cwd=tmp_path)
+            capture_output=True, text=True, cwd=tmp_path, env=conftest.lore_env())
 
     with ThreadPoolExecutor(max_workers=WRITERS) as pool:
         results = list(pool.map(write, range(WRITERS)))
@@ -46,9 +47,8 @@ def test_a_page_is_never_observed_half_written(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "real.ts").write_text("export {}")
     store = tmp_path / ".memory"
-    sys.path.insert(0, str(SCRIPT.parent))
-    import memory_lib
-    import memory_write
+    from pagelore import lib as memory_lib
+    from pagelore import write as memory_write
 
     memory_write.write_page(store, "p", "T", "concept", ["src/real.ts"],
                             "## One\n\n" + FILLER)
@@ -72,8 +72,7 @@ def test_a_page_is_never_observed_half_written(tmp_path):
 
 
 def test_the_lock_leaves_nothing_behind(tmp_path):
-    sys.path.insert(0, str(SCRIPT.parent))
-    import memory_write
+    from pagelore import write as memory_write
     store = tmp_path / ".memory"
     memory_write.write_page(store, "p", "T", "concept", [], "## One\n\nbody\n")
     assert [p.name for p in store.iterdir() if p.suffix == ".lock"] == []
@@ -82,8 +81,7 @@ def test_the_lock_leaves_nothing_behind(tmp_path):
 def test_the_log_survives_parallel_appends(tmp_path):
     """Every line must stay parseable: a torn line is tolerated by the reader,
     but it still loses an event."""
-    sys.path.insert(0, str(SCRIPT.parent))
-    import memory_lib
+    from pagelore import lib as memory_lib
     store = tmp_path / ".memory"
     memory_lib.ensure_store(store)
 
@@ -104,7 +102,7 @@ def test_a_lock_left_by_a_dead_process_is_taken_over_at_once(tmp_path):
     lost their section, every process exiting 0."""
     import time
 
-    import memory_lib
+    from pagelore import lib as memory_lib
     store = tmp_path / ".memory"
     memory_lib.ensure_store(store)
     page = store / "p.md"
@@ -125,7 +123,7 @@ def test_a_live_holders_lock_is_never_stolen(tmp_path, monkeypatch):
     """Taking a live writer's lock away is what turned a stall into data loss."""
     import time
 
-    import memory_lib
+    from pagelore import lib as memory_lib
     monkeypatch.setattr(memory_lib, "LOCK_TIMEOUT_SECONDS", 0.3)
     store = tmp_path / ".memory"
     memory_lib.ensure_store(store)
@@ -147,7 +145,7 @@ def test_a_live_holders_lock_is_never_stolen(tmp_path, monkeypatch):
 
 
 def test_a_failed_write_leaves_no_temp_file_behind(tmp_path):
-    import memory_lib
+    from pagelore import lib as memory_lib
     store = tmp_path / ".memory"
     memory_lib.ensure_store(store)
     try:
@@ -161,7 +159,7 @@ def test_liveness_never_signals_a_process_directly(tmp_path):
     """`os.kill(pid, 0)` is a liveness probe on POSIX and a kill on Windows, where
     any signal but CTRL_C/CTRL_BREAK is delivered via TerminateProcess. It may
     appear in exactly one place, behind the platform check."""
-    import memory_lib
+    from pagelore import lib as memory_lib
     source = Path(memory_lib.__file__).read_text(encoding="utf-8")
     lines = source.splitlines()
     calls = [n for n, line in enumerate(lines) if line.strip().startswith("os.kill(")]
@@ -177,7 +175,7 @@ def test_liveness_never_signals_a_process_directly(tmp_path):
 def test_a_dead_process_is_reported_dead_and_a_live_one_alive():
     import os as _os
 
-    import memory_lib
+    from pagelore import lib as memory_lib
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
     dead.wait()
     assert memory_lib._process_alive(dead.pid) is False

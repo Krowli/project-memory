@@ -5,7 +5,7 @@ kind: decision
 created: 2026-09-15
 updated: 2026-09-15
 sources:
-  - skills/project-memory/scripts/memory_search.py
+  - src/pagelore/search.py
   - evals/run.py
 ---
 

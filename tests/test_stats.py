@@ -2,9 +2,10 @@
 the same failure the write gate exists to avoid."""
 import json
 
-import memory_lib
-import memory_stats
 import pytest
+
+from pagelore import lib as memory_lib
+from pagelore import stats as memory_stats
 
 
 @pytest.fixture()

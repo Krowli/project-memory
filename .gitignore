@@ -9,3 +9,7 @@ venv/
 .modular/
 # Modular: machine-local MCP server path — regenerated per project open
 .mcp.json
+
+# Build artefacts
+dist/
+*.egg-info/

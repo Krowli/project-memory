@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Search project memory. Prints ranked `slug — title — snippet`.
 
-Usage:  python3 memory_search.py "query words" [-k N] [--store DIR] [--json]
-                                 [--touching PATH ...]
+Usage:  lore search "query words" [-k N] [--store DIR] [--json]
+                          [--touching PATH ...]
 
 Ranking is BM25F over two fields — title (+ slug) and body. See
 references/retrieval.md for how it was chosen, what it was measured against, and
@@ -16,11 +16,11 @@ when the flag is given.
 
 The write gate runs here too. A page under MIN_BODY that matched the query is
 not ranked; it is named on stderr and in `--json` so it can be rewritten through
-memory_write.py. A page with no sources is shown, marked. Search runs on every
+`lore write`. A page with no sources is shown, marked. Search runs on every
 harness the skill is installed in, which is what makes this the place for it:
 a hook that denies a hand-written page exists on one harness only.
 
-Two retrieval paths, one ordering. A persistent SQLite FTS5 index (memory_index)
+Two retrieval paths, one ordering. A persistent SQLite FTS5 index (index.py)
 answers when it can; when it cannot — no FTS5 in this interpreter, a read-only
 store, a sibling process rebuilding, a corrupt file — the pages are read and
 ranked in process instead. Slower, never stale, never a traceback.
@@ -40,11 +40,10 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import memory_index
-from memory_lib import (
+from .cli import add_version
+from .index import lookup
+from .lib import (
     MIN_BODY,
-    VERSION,
     Page,
     find_store,
     load_pages,
@@ -302,7 +301,7 @@ def _from_index(query: str, store: Path, k: int) -> list[tuple[float, Page]] | N
     `k`. The pages themselves are still read from disk: the markdown is the source
     of truth for everything displayed, and the index only says which files to open.
     """
-    rows = memory_index.lookup(query, store, max(k * 3, 30), tokenize)
+    rows = lookup(query, store, max(k * 3, 30), tokenize)
     if rows is None:
         return None
     hits: list[tuple[float, Page]] = []
@@ -423,18 +422,22 @@ def format_hit(score: float, page: Page, query: str = "") -> str:
     return line
 
 
-def format_skipped(skipped: list[Page], store: Path) -> str:
-    """One line, once, naming what the query would have shown and did not."""
+def format_skipped(skipped: list[Page], store: Path, cmd: str = "lore") -> str:
+    """One line, once, naming what the query would have shown and did not.
+
+    `cmd` so the line names the command that actually ran: a machine where `lore`
+    was already taken installs `pagelore` instead, and an instruction naming a
+    command that is not there is worse than no instruction.
+    """
     names = ", ".join(sorted(p.slug for p in skipped))
-    return (f"skipped {len(skipped)} page(s) under {MIN_BODY} chars, which memory_write.py "
-            f"would refuse: {names} — rewrite them through memory_write.py to make them "
+    return (f"skipped {len(skipped)} page(s) under {MIN_BODY} chars, which `{cmd} write` "
+            f"would refuse: {names} — rewrite them through `{cmd} write` to make them "
             f"searchable (they are in {store})")
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Search project memory.")
-    ap.add_argument("--version", action="version",
-                    version=f"project-memory {VERSION} ({Path(__file__).resolve().parent.parent})")
+def main(argv: list[str] | None = None, *, prog: str = "lore search") -> int:
+    ap = argparse.ArgumentParser(prog=prog, description="Search project memory.")
+    add_version(ap)
     ap.add_argument("query", nargs="*")
     ap.add_argument("-k", type=int, default=10, help="max results (default 10)")
     ap.add_argument("--store", type=Path, default=None)
@@ -470,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
         for s, p in hits:
             print(format_hit(s, p, query))
     if last_skipped:
-        print(format_skipped(last_skipped, store), file=sys.stderr)
+        print(format_skipped(last_skipped, store, prog.split()[0]), file=sys.stderr)
     return 0
 
 

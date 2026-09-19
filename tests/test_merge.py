@@ -4,8 +4,8 @@
 promise was broken while the command still exited 0 and printed the page path —
 the worst possible shape for a failure, because nothing downstream can see it.
 """
-import memory_lib
-import memory_write
+from pagelore import lib as memory_lib
+from pagelore import write as memory_write
 
 LONG = ("The reap loop waits on the child before closing the master fd, so a child "
         "that ignores SIGTERM keeps the fd open and waitpid never returns. " * 3)

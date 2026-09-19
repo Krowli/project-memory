@@ -5,9 +5,10 @@ never seen. The first write in each of them creates a store. If that store is
 not shielded at the moment it is created, the protection depends on the user
 remembering — in a repository they may well publish.
 """
-import memory_lib
-import memory_write
 import pytest
+
+from pagelore import lib as memory_lib
+from pagelore import write as memory_write
 
 LONG = ("The reap loop waits on the child before closing the master fd, so a child "
         "that ignores SIGTERM keeps the fd open and waitpid never returns. " * 3)
@@ -86,7 +87,7 @@ def test_a_refused_write_still_shields_the_store_it_creates(project):
 
 def test_a_search_against_a_missing_store_shields_it_too(project):
     """Searching also logs, and a search usually happens before any write."""
-    import memory_search
+    from pagelore import search as memory_search
     memory_search.search("anything at all", project / ".memory")
     if (project / ".memory").exists():
         assert ".memory/" in gitignore(project)

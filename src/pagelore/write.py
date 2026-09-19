@@ -2,9 +2,9 @@
 """Create or update a memory page.
 
 Usage:
-  python3 memory_write.py --slug SLUG --title TITLE --kind KIND
-                          --source PATH [--source PATH ...] --body TEXT|-
-                          [--supersedes SLUG] [--store DIR]
+  lore write --slug SLUG --title TITLE --kind KIND
+             --source PATH [--source PATH ...] --body TEXT|-
+             [--supersedes SLUG] [--store DIR]
 
 Re-running with the same slug replaces same-header sections and appends new
 ones, so repeated calls are safe. What was replaced is printed, because a
@@ -26,10 +26,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from memory_lib import (
+from .cli import add_version
+from .lib import (
     MIN_BODY,
-    VERSION,
     StoreUnavailable,
     atomic_write,
     ensure_store,
@@ -48,7 +47,7 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 # was worth reading.
 KINDS = ("decision", "bug", "concept", "howto")
 
-# MIN_BODY lives in memory_lib, shared with the reader. It is measured against
+# MIN_BODY lives in lib.py, shared with the reader. It is measured against
 # the resulting page, not against one write: an amendment that records a
 # reversal is the cheapest and most valuable write in the system, and a floor on
 # the increment forbade exactly that.
@@ -362,10 +361,9 @@ def validate(slug: str, kind: str, sources: list[str], body: str, store: Path,
     return None
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Write a project memory page.")
-    ap.add_argument("--version", action="version",
-                    version=f"project-memory {VERSION} ({Path(__file__).resolve().parent.parent})")
+def main(argv: list[str] | None = None, *, prog: str = "lore write") -> int:
+    ap = argparse.ArgumentParser(prog=prog, description="Write a project memory page.")
+    add_version(ap)
     ap.add_argument("--slug", required=True)
     ap.add_argument("--title", required=True)
     ap.add_argument("--kind", default=None, help=f"one of: {', '.join(KINDS)}")

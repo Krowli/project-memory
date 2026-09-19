@@ -12,12 +12,6 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# The one place the runtime knows its own version. Eight manifests carry it too,
-# and a test fails if any of them drift — but none of those files is importable,
-# and until this existed neither the user nor the agent could tell which version
-# was actually on disk.
-VERSION = "0.3.4"
-
 STORE_ENV = "PROJECT_MEMORY_DIR"
 STORE_DIRNAME = ".memory"
 LOG_NAME = ".log.jsonl"
@@ -25,7 +19,7 @@ LOG_NAME = ".log.jsonl"
 # Windows, where 17 of 200 concurrent lines went missing. This serialises the
 # threads inside one process; O_APPEND still covers the cross-process case.
 _LOG_LOCK = threading.Lock()
-# Written by `install.sh --store tracked`: the pages here are meant to be
+# Written by `lore init --store tracked`: the pages here are meant to be
 # committed, so nothing should quietly add them to .gitignore behind the user.
 TRACKED_MARKER = ".tracked"
 # Claude Code exports the session id to the Bash tool, which is where the scripts
@@ -43,7 +37,7 @@ REPLACE_TIMEOUT_SECONDS = 5.0
 class StoreUnavailable(Exception):
     """The store path exists but cannot be used as a directory.
 
-    `install.sh --store home` makes the store a symlink; if its target is gone,
+    `lore init --store home` makes the store a symlink; if its target is gone,
     `Path.exists()` follows the link and reports False while `mkdir` fails. That
     used to surface as a raw FileExistsError traceback from the write path, which
     is the one shape a refusal must never take — the agent gets no FIX: line and

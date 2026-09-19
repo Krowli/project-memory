@@ -1,7 +1,7 @@
 # Retrieval
 
-`memory_search.py` has two paths and one ordering. A persistent SQLite FTS5 index
-(`memory_index.py`) answers when it can; otherwise every page is read and scored
+`lore search` has two paths and one ordering. A persistent SQLite FTS5 index
+(`index.py`) answers when it can; otherwise every page is read and scored
 in process with the BM25F below. Both drop zero scores and return the top `k`. Ordering is score, then the
 more recently `updated` page, then slug — alphabetical order used to decide which
 of two equally scored pages the agent read first, which is how a reversed decision

@@ -1,6 +1,7 @@
-import memory_lib
-import memory_write
 import pytest
+
+from pagelore import lib as memory_lib
+from pagelore import write as memory_write
 
 
 def test_creates_page_with_frontmatter(store):

@@ -1,6 +1,6 @@
 # Page format
 
-One file per topic at `.memory/<slug>.md`, written by `memory_write.py`. Write
+One file per topic at `.memory/<slug>.md`, written by `lore write`. Write
 them through the script: it validates them, and hand-edited frontmatter is the
 one input the parser cannot round-trip. A page written by hand is still read,
 but search skips it while it is under 200 characters and marks it while it has
@@ -13,7 +13,7 @@ Frontmatter is YAML-ish and parsed leniently. This is the contract:
 | `slug` | yes | lowercase, digits, single hyphens; matches the filename |
 | `title` | yes | one line, quoted |
 | `kind` | yes | exactly one of `decision`, `bug`, `concept`, `howto` |
-| `created` / `updated` | auto | ISO dates, managed by `memory_write.py` |
+| `created` / `updated` | auto | ISO dates, managed by `lore write` |
 | `sources` | yes | file paths this page explains; each must exist at write time |
 | `supersedes` | no | slugs this page replaces (`--supersedes`) |
 | `status` / `superseded_by` | auto | stamped on the page that was replaced |

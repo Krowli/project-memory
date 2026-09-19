@@ -9,7 +9,7 @@ rebuilt by a sibling process must still answer, slower.
 Why the shape is what it is — each of these was measured before it was written:
 
 - **No WAL.** WAL cannot be read from a read-only database and does not work on a
-  network filesystem, which is exactly what `install.sh --store home` invites
+  network filesystem, which is exactly what `lore init --store home` invites
   (an NFS or iCloud home directory). The default rollback journal reads fine in a
   0555 directory. WAL would also buy nothing: every process here is a writer.
 - **The index lives outside the store.** In `tracked` mode anything inside gets
@@ -36,7 +36,7 @@ import os
 import time
 from pathlib import Path
 
-from memory_lib import _boot_id, _owner_is_gone, page_paths
+from .lib import _boot_id, _owner_is_gone, page_paths
 
 # Bumped when the on-disk shape changes. A mismatch rebuilds.
 SCHEMA_VERSION = 1
@@ -310,7 +310,7 @@ def lookup(query: str, store: Path, limit: int, tokenize) -> list[tuple[float, s
 
 
 def _page_parser():
-    from memory_lib import parse_page
+    from .lib import parse_page
     return parse_page
 
 

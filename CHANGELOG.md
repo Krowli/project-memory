@@ -6,6 +6,25 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-19
+
+### Changed
+
+- **The program is an installed command now, not a directory five plugin systems
+  copy.** `pipx install pagelore` (or `npm install -g pagelore`), then `lore init`.
+  The command an agent runs is `lore search "…"` — no path, correct in every
+  layout instead of one of three. Four things that cost real time this week go
+  away with the old shape: the per-install-mode path, the version living in ten
+  hand-edited places, updates that reached nobody unless a manifest was bumped,
+  and a distribution that had never once contained the program.
+- The package is `pagelore` and the command is `lore` because `project-memory` is
+  already taken on both PyPI and npm by unrelated products in the same niche.
+
+### Removed
+
+- The skill directory, all six plugin manifests and the Gemini extension file.
+  There is no Agent Skills packaging any more.
+
 ### Added
 
 - **`evals/mcp_probe.py`**, a stdio MCP server exposing the two tools, and

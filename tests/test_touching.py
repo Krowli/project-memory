@@ -7,8 +7,8 @@ a single word with the query, or with the path, for that to be true.
 """
 import json
 
-import memory_search
-import memory_write
+from pagelore import search as memory_search
+from pagelore import write as memory_write
 
 ABOUT_A = ("## Cause\n\nThe reap loop waits on the child before closing the master fd, "
            "so a child that ignores SIGTERM keeps the fd open and waitpid never returns. " * 2)

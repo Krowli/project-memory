@@ -7,9 +7,10 @@ matters can be set to zero and everything stays green.
 """
 import unicodedata
 
-import memory_search
-import memory_write
 from conftest import FILLER
+
+from pagelore import search as memory_search
+from pagelore import write as memory_write
 
 DECOY = ("The palette highlights fuzzy match ranges. webgl context loss is mentioned "
          "here in passing, webgl context loss again, and webgl context loss once more. ") * 3

@@ -5,7 +5,7 @@ kind: bug
 created: 2026-08-18
 updated: 2026-08-18
 sources:
-  - skills/project-memory/scripts/memory_lib.py
+  - src/pagelore/lib.py
 ---
 
 ## Cause

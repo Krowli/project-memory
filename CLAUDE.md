@@ -1,9 +1,17 @@
 # Project memory
 
-Installed as a plugin, Claude Code loads the full contract from
-`skills/project-memory/SKILL.md` on its own — this file exists for the case where
-the repository is cloned rather than installed, and for other tools that read
-`CLAUDE.md` directly. The commands below are therefore the in-clone paths.
+This repository is the source of `pagelore`. The contract below is the same one
+the installed command writes into an agent's instruction file — the difference is
+that a clone has no installed `lore` yet, so run the module directly:
+
+```bash
+python3 -m pagelore search "your query"        # from the repo root, with src/ on sys.path
+```
+
+`pip install -e .` (or `pipx install -e .`) puts `lore` on PATH and the commands
+below work verbatim. The canonical text lives in `src/pagelore/data/AGENT.md` and
+is rendered into `AGENTS.md`; if the two ever disagree, that file wins and
+`tests/test_instruction_block.py` fails.
 
 Durable decisions, contracts and bug post-mortems live as markdown pages in
 `.memory/`.
@@ -13,18 +21,17 @@ part of it works, why it is that way, what was decided or rejected — and befor
 changing an unfamiliar subsystem, search first:
 
 ```bash
-python3 skills/project-memory/scripts/memory_search.py "your query"
+lore search "your query"
 ```
 
 Query words are OR'd and ranked, so give several. The first output line is the
 store's absolute path; open a full page with `cat <that path>/<slug>.md`. A hit
-marked `⚠ superseded by <slug>` was replaced — read the replacement first. Add
-`--touching <path>` to put the pages written against a file you are about to
-change first. If nothing relevant comes back, say so rather than guessing.
+marked `⚠ superseded by <slug>` was replaced — read the replacement first. If
+nothing relevant comes back, say so rather than guessing.
 
 The trigger is the kind of claim you are about to make, not the wording of the
-question; "how does X work" and "what do you know about this project" are
-memory questions too. This file is not a substitute for the search — it carries
+question; "how does X work" and "what do you know about this project" are memory
+questions too. This file is not a substitute for the search — it carries
 instructions rather than reasons, and it goes stale while a page stays dated and
 sourced. Skip the search only for mechanical work (a command, a typo, a rename)
 and for general programming questions.
@@ -33,8 +40,7 @@ and for general programming questions.
 write the page:
 
 ```bash
-python3 skills/project-memory/scripts/memory_write.py \
-  --slug short-kebab-slug --title "One line" --kind decision \
+lore write --slug short-kebab-slug --title "One line" --kind decision \
   --source path/to/file --body -   <<'PMEOF'
 ## Cause
 
@@ -44,24 +50,27 @@ PMEOF
 
 `--kind` is one of `decision`, `bug`, `concept`, `howto`. The terminator is
 `PMEOF`, not `EOF`, so a page that documents heredocs cannot end its own body
-early. When a decision reverses an earlier one, add
-`--supersedes <old-slug>`: that stamps the old page and demotes it, instead of
-leaving two pages that both read as current.
+early. When a decision reverses an earlier one, add `--supersedes <old-slug>`:
+that stamps the old page and demotes it, instead of leaving two pages that both
+read as current.
 
-The script validates and rejects: no sources, a source path that does not exist,
+The command validates and rejects: no sources, a source path that does not exist,
 a resulting page too short to be worth keeping. A rejection exits non-zero and
-prints a `FIX:` line with the command to run instead — follow it rather than
-writing the markdown by hand: search skips a hand-written page under 200
-characters and marks one with no sources.
+prints a `FIX:` line with the command to run instead — follow it. A page written
+by hand is refused on the next read, because hand-edited frontmatter is the one
+input the parser cannot round-trip.
 
 Re-running the same slug replaces same-header sections in place and appends new
 ones, so amendments are cheap and safe.
 
-Skip this for typos, reverts, formatting and test-only edits. Before you report
-the work done, ask whether it changed three or more files; if so, write the page
-or say in one line that there is nothing worth keeping. One topic per page;
-cross-link with `[[other-slug]]`.
+Skip this for typos, reverts, formatting and test-only edits. One topic per
+page; cross-link with `[[other-slug]]`.
 
-Installed rather than cloned, the same scripts live at
-`~/.agents/skills/project-memory/scripts/` (the default) or at
-`.agents/skills/project-memory/scripts/` (`install.sh --project`).
+## Working on this repository
+
+- `pytest` and `PROJECT_MEMORY_NO_FTS5=1 pytest` both have to pass; the second
+  covers the scan ranker that answers when SQLite has no FTS5.
+- `ruff check .` — line length 100, target `py39`.
+- The version is one literal in `src/pagelore/__init__.py`. Nothing else may
+  carry it; `tests/test_version_is_single_sourced.py` enforces that.
+- No proposal lands without a number from `evals/` or a failing test it fixes.

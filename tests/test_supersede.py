@@ -5,9 +5,9 @@ decisions that were reversed months ago" — and until now the store had no way 
 express it: both pages sat in the result list as peers, the older one often on
 top, and the printed line carried no date.
 """
-import memory_lib
-import memory_search
-import memory_write
+from pagelore import lib as memory_lib
+from pagelore import search as memory_search
+from pagelore import write as memory_write
 
 LONG = ("Server-side sessions in Redis, not JWT: a denylist defeats statelessness, "
         "and the compliance rule gives us one second to revoke access. " * 3)

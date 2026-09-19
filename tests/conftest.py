@@ -4,8 +4,18 @@ from pathlib import Path
 
 import pytest
 
-SKILL = Path(__file__).resolve().parents[1] / "skills" / "project-memory"
-sys.path.insert(0, str(SKILL / "scripts"))
+REPO = Path(__file__).resolve().parents[1]
+
+# How a subprocess test runs the program. `-m` rather than a console script so the
+# suite works in a bare clone with nothing installed, which is the same reason
+# pyproject keeps `pythonpath = ["src"]`.
+LORE = [sys.executable, "-m", "pagelore"]
+
+
+def lore_env(**extra) -> dict:
+    """A child that can import the package and will not touch the user's home."""
+    return {**os.environ, "PYTHONPATH": str(REPO / "src"),
+            "PROJECT_MEMORY_NO_REFRESH": "1", **extra}
 
 
 @pytest.fixture()
@@ -25,7 +35,7 @@ FILLER = ("\n\nRecorded so the next agent does not rediscover it: the cause sits
 
 @pytest.fixture()
 def populated(store):
-    import memory_write
+    from pagelore import write as memory_write
     memory_write.write_page(
         store, "webgl-context-loss", "xterm WebGL context loss on display sleep",
         "bug", ["src/terminal/renderer.ts"],

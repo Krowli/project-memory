@@ -10,8 +10,8 @@ supersedes:
 sources:
   - docs/research/superpowers-portability.md
   - evals/acceptance.py
-  - skills/project-memory/SKILL.md
-  - skills/project-memory/scripts/memory_search.py
+  - src/pagelore/data/AGENT.md
+  - src/pagelore/search.py
 ---
 
 ## Context

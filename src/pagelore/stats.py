@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Summarise the store's log: what was written, what was refused, what was asked.
 
-Usage:  python3 memory_stats.py [--store DIR] [--since YYYY-MM-DD] [--json]
+Usage:  lore stats [--store DIR] [--since YYYY-MM-DD] [--json]
 
 Exists because a log nobody reads is the same failure as no log. Four questions
 it answers, which are exactly the ones a trial period has to settle:
@@ -25,8 +25,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from memory_lib import LOG_NAME, VERSION, find_store
+from .cli import add_version
+from .lib import LOG_NAME, find_store
 
 
 def read_log(store: Path, since: str | None) -> list[dict]:
@@ -97,10 +97,9 @@ def summarise(records: list[dict]) -> dict:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Summarise the project-memory log.")
-    ap.add_argument("--version", action="version",
-                    version=f"project-memory {VERSION} ({Path(__file__).resolve().parent.parent})")
+def main(argv: list[str] | None = None, *, prog: str = "lore stats") -> int:
+    ap = argparse.ArgumentParser(prog=prog, description="Summarise the project-memory log.")
+    add_version(ap)
     ap.add_argument("--store", type=Path, default=None)
     ap.add_argument("--since", default=None, help="ISO date, e.g. 2026-08-09")
     ap.add_argument("--json", action="store_true")

@@ -3,9 +3,9 @@
 Each of these was a way one file could take down retrieval for the whole
 project, or take something out of it that was never meant to be there.
 """
-import memory_lib
-import memory_search
-import memory_write
+from pagelore import lib as memory_lib
+from pagelore import search as memory_search
+from pagelore import write as memory_write
 
 LONG = ("The reap loop waits on the child before closing the master fd, so a child "
         "that ignores SIGTERM keeps the fd open and waitpid never returns. " * 3)

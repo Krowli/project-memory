@@ -7,13 +7,12 @@ something out of the store that was never in it.
 import json
 import os
 import subprocess
-import sys
-from pathlib import Path
 
 import conftest
-import memory_search
-import memory_write
 import pytest
+
+from pagelore import search as memory_search
+from pagelore import write as memory_write
 
 LONG = ("The reap loop waits on the child before closing the master fd, so a child "
         "that ignores SIGTERM keeps the fd open and waitpid never returns. " * 3)
@@ -50,11 +49,10 @@ def test_a_fifo_named_like_a_page_does_not_hang_the_search(stocked):
     signal than one that fails.
     """
     os.mkfifo(stocked / "pipe.md")
-    script = (Path(memory_search.__file__).resolve())
     proc = subprocess.run(
-        [sys.executable, str(script), "--store", str(stocked), "webgl", "context", "loss",
+        [*conftest.LORE, "search", "--store", str(stocked), "webgl", "context", "loss",
          "--json"],
-        capture_output=True, text=True, timeout=30)
+        capture_output=True, text=True, timeout=30, env=conftest.lore_env())
     assert proc.returncode == 0, proc.stderr
     assert [hit["slug"] for hit in json.loads(proc.stdout)["hits"]] == ["real"]
 
