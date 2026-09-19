@@ -1,16 +1,39 @@
 {
   "name": "pagelore",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Durable project memory as markdown pages on disk, searchable without a server",
-  "keywords": ["memory", "retrieval", "bm25", "knowledge-base", "context", "agents", "llm", "claude-code", "codex"],
+  "keywords": [
+    "memory",
+    "retrieval",
+    "bm25",
+    "knowledge-base",
+    "context",
+    "agents",
+    "llm",
+    "claude-code",
+    "codex"
+  ],
   "homepage": "https://github.com/Krowli/project-memory#readme",
   "bugs": "https://github.com/Krowli/project-memory/issues",
-  "repository": { "type": "git", "url": "git+https://github.com/Krowli/project-memory.git", "directory": "npm" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Krowli/project-memory.git",
+    "directory": "npm"
+  },
   "license": "MIT",
   "author": "Yehven Shcherbynskyi <lionmause999@gmail.com>",
-  "bin": { "lore": "bin/lore.js", "pagelore": "bin/lore.js" },
-  "files": ["bin/", "vendor/", "README.md"],
-  "engines": { "node": ">=14" },
+  "bin": {
+    "lore": "bin/lore.js",
+    "pagelore": "bin/lore.js"
+  },
+  "files": [
+    "bin/",
+    "vendor/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
   "scripts": {
     "prepack": "node scripts/vendor.js",
     "prepare": "node scripts/vendor.js"

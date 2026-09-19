@@ -48,26 +48,31 @@ Then, once per machine:
 lore init
 ```
 
-`lore init` does three things, in this order, and nothing else:
+`lore init` writes the instruction block to `~/.project-memory/AGENT.md` and then
+asks three questions. Arrows move, space ticks a box, enter confirms, escape skips.
+Digits work too, and where there is no terminal — a pipe, a CI job — the questions
+become a numbered prompt instead.
 
-1. Writes the instruction block to `~/.project-memory/AGENT.md`. This is the text
-   that makes an agent search before it answers, and it is the only part that is
-   not optional — [measured](#does-the-agent-use-it-unprompted), an agent with it
-   searches every time and an agent without it never does.
-2. Asks which agents should use it, and offers to add one line to that agent's own
-   instruction file. It prints the exact file and the exact line first, then asks.
-   **The default connects nothing** — writing into your global agent configuration
-   unasked is not a default anyone else gets to choose for you. If you decline it
-   prints the line so you can add it yourself.
-3. Inside a git repository, asks whether this project's pages should be private
-   (gitignored, the default) or tracked and reviewed in pull requests.
+1. **Where this applies**: only the repository you are standing in, or every project
+   on this machine. The project answer writes into that repository's own `CLAUDE.md`
+   rather than the one in your home directory.
+2. **Which agents**: it prints the exact file and the exact line first, then asks.
+   **The default connects nothing** — writing into your agent configuration unasked
+   is not a default anyone else gets to choose for you. If you decline it prints the
+   line so you can add it yourself.
+3. **Where this project's pages live**: private and gitignored (the default),
+   committed and reviewed in pull requests, or outside the repository behind a
+   symlink.
+
+The block itself is the only part that is not optional — [measured](#does-the-agent-use-it-unprompted),
+an agent with it searches every time and an agent without it never does.
 
 With no terminal to answer on it asks nothing, writes only the block, prints the
 manual instructions and exits 0. Flags are the confirmation, so a scripted install
 works:
 
 ```bash
-lore init --agent claude --store tracked --yes
+lore init --agent claude --scope project --store tracked --yes
 ```
 
 To check what is connected, and to catch the three failures that produce no error

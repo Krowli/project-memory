@@ -67,7 +67,7 @@ def test_the_block_is_written_before_the_line_that_points_at_it(machine):
     """Order, not taste: an `@path` to a missing file produces no error in any
     harness. The agent silently loads nothing, which is the failure this whole
     design exists to avoid."""
-    code, out = run("4\n")
+    code, out = run("2\n4\n")
     assert code == 0
     assert instructions.block_path().is_file()
     assert str(instructions.block_path()) in out
@@ -75,7 +75,7 @@ def test_the_block_is_written_before_the_line_that_points_at_it(machine):
 
 def test_choosing_an_agent_shows_the_exact_change_and_asks_first(machine):
     home, _ = machine
-    _, out = run("1\ny\n1\n")
+    _, out = run("2\n1\ny\n1\n")
     assert "This will change:" in out
     assert str(home / ".claude" / "CLAUDE.md") in out
     assert f"@{instructions.block_path()}" in out
@@ -88,7 +88,7 @@ def test_choosing_an_agent_shows_the_exact_change_and_asks_first(machine):
 
 def test_declining_the_preview_writes_nothing_and_still_says_what_to_add(machine):
     home, _ = machine
-    _, out = run("1\nn\n1\n")
+    _, out = run("2\n1\nn\n1\n")
     assert "nothing written" in out
     assert "To connect an agent yourself" in out
     assert instructions.MARK_BEGIN not in (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
@@ -98,15 +98,15 @@ def test_the_default_answer_connects_nothing(machine):
     """Writing into someone's global agent configuration unasked is not a default
     anyone gets to choose for them."""
     home, _ = machine
-    _, out = run("\n\n")
+    _, out = run("2\n\n\n")
     assert instructions.MARK_BEGIN not in (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
     assert "To connect an agent yourself" in out
 
 
 def test_running_it_twice_replaces_the_block_rather_than_stacking_one(machine):
     home, _ = machine
-    run("1\ny\n1\n")
-    run("1\ny\n1\n")
+    run("2\n1\ny\n1\n")
+    run("2\n1\ny\n1\n")
     written = (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
     assert written.count(instructions.MARK_BEGIN) == 1
     assert written.count(instructions.MARK_END) == 1
@@ -114,7 +114,7 @@ def test_running_it_twice_replaces_the_block_rather_than_stacking_one(machine):
 
 def test_codex_gets_the_text_because_it_cannot_include_a_file(machine):
     home, _ = machine
-    run("3\ny\n1\n")
+    run("2\n3\ny\n1\n")
     written = (home / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
     assert "Before stating anything about this project" in written
     assert f"@{instructions.block_path()}" not in written
@@ -125,7 +125,7 @@ def test_the_private_store_creates_nothing(machine):
     a directory made here would be both redundant and a surprise inside someone's
     repository."""
     _, project = machine
-    run("4\n1\n")
+    run("2\n4\n1\n")
     assert not (project / ".memory").exists()
 
 
@@ -133,7 +133,7 @@ def test_the_tracked_store_is_marked_before_the_first_write(machine):
     """`.tracked` has to exist before anything writes, or the store gitignores
     itself behind a user who asked for the opposite."""
     _, project = machine
-    run("4\n2\n")
+    run("2\n4\n2\n")
     assert (project / ".memory" / ".tracked").is_file()
     gitignore = project / ".gitignore"
     if gitignore.exists():
@@ -168,6 +168,53 @@ def test_the_home_store_symlinks_out_of_the_repo_and_gitignores_the_link(machine
     assert (target / "probe.md").is_file()
 
 
+def test_this_project_only_writes_into_the_repository_and_not_the_home(machine):
+    """The question that was missing. The wizard offered three files, all of them
+    global, and the screen said "applies to every project" — which is a notice, not
+    a choice. The first person to run it wanted one project and had no way to say
+    so."""
+    home, project = machine
+    _, out = run("1\n1\ny\n1\n")            # this project, Claude Code, yes, private
+
+    local = project / "CLAUDE.md"
+    assert local.is_file(), "nothing was written into the project"
+    assert f"@{instructions.block_path()}" in local.read_text(encoding="utf-8")
+    assert instructions.MARK_BEGIN not in (home / ".claude" / "CLAUDE.md").read_text(
+        encoding="utf-8"), "it wrote globally after being told this project only"
+    assert str(local) in out, "the preview named a file other than the one it wrote"
+
+
+def test_the_flag_is_the_same_answer_as_the_question(machine):
+    home, project = machine
+    code, _ = run("", argv=["--scope", "project", "--agent", "claude", "--yes"],
+                  interactive=False)
+    assert code == 0
+    assert (project / "CLAUDE.md").is_file()
+    assert instructions.MARK_BEGIN not in (home / ".claude" / "CLAUDE.md").read_text(
+        encoding="utf-8")
+
+
+def test_project_scope_outside_a_repository_says_so_instead_of_guessing(tmp_path, monkeypatch):
+    """`--scope project` with no project is a contradiction, and silently writing to
+    the global file would be the worst of the three possible answers."""
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (home / ".claude" / "CLAUDE.md").write_text("# mine\n", encoding="utf-8")
+    loose = tmp_path / "loose"
+    loose.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv(instructions.HOME_ENV, str(home / ".project-memory"))
+    monkeypatch.setenv(instructions.NO_REFRESH_ENV, "1")
+    monkeypatch.chdir(loose)
+    monkeypatch.setitem(init.AGENTS, "claude",
+                        ("Claude Code", home / ".claude" / "CLAUDE.md", "include"))
+
+    _, out = run("", argv=["--scope", "project", "--agent", "claude", "--yes"],
+                 interactive=False)
+    assert "needs a git repository" in out
+
+
 def test_no_terminal_asks_nothing_stalls_never_and_still_writes_the_block(machine):
     home, project = machine
     code, out = run("", interactive=False)
@@ -189,7 +236,7 @@ def test_flags_are_the_confirmation_so_it_works_in_a_pipeline(machine):
 
 def test_uninstall_takes_out_the_block_and_leaves_the_pages(machine, capsys):
     home, project = machine
-    run("1\ny\n2\n")
+    run("2\n1\ny\n2\n")
     (project / ".memory" / "a-page.md").write_text("---\nslug: a-page\n---\n\nkeep me\n",
                                                    encoding="utf-8")
 
@@ -208,7 +255,7 @@ def test_doctor_calls_nothing_connected_a_fault(machine):
     assert before["connected"]["ok"] is False
     assert "nothing tells any agent" in before["connected"]["detail"]
 
-    run("1\ny\n1\n")
+    run("2\n1\ny\n1\n")
     after = {row["check"]: row for row in doctor.findings()}
     assert after["connected"]["ok"] is True
     assert after["agent:claude"]["ok"] is True
@@ -217,7 +264,7 @@ def test_doctor_calls_nothing_connected_a_fault(machine):
 def test_doctor_catches_an_include_pointing_at_a_file_that_is_gone(machine):
     """The silent failure: no harness errors on a missing `@path`, the agent just
     stops searching, and nobody connects that to whatever deleted the file."""
-    run("1\ny\n1\n")
+    run("2\n1\ny\n1\n")
     instructions.block_path().unlink()
 
     claude = {row["check"]: row for row in doctor.findings()}["agent:claude"]
@@ -226,11 +273,14 @@ def test_doctor_catches_an_include_pointing_at_a_file_that_is_gone(machine):
 
 
 @conftest.needs_posix
-def test_it_asks_on_a_real_terminal(tmp_path):
-    """Every test above drives the questions in process. This one proves the wiring
-    they bypass: that on a terminal the default really does take the branch that
-    asks."""
+def test_it_asks_with_arrow_keys_on_a_real_terminal(tmp_path):
+    """Every test above drives the numbered path, because a StringIO is not a
+    terminal. This one proves the half they cannot reach: that a real terminal gets
+    the keyboard menu, that arrows move the cursor, and that the wizard does not
+    stall waiting for a key it has already been sent."""
     import pty
+    import select
+    import time
 
     home = tmp_path / "home"
     home.mkdir()
@@ -241,20 +291,33 @@ def test_it_asks_on_a_real_terminal(tmp_path):
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(project)
-        os.environ.update({"HOME": str(home), "PYTHONPATH": str(REPO / "src"),
+        os.environ.update({"HOME": str(home), "USERPROFILE": str(home),
+                           "PYTHONPATH": str(REPO / "src"),
                            instructions.HOME_ENV: str(home / ".project-memory"),
                            instructions.NO_REFRESH_ENV: "1"})
         os.execv(sys.executable, [sys.executable, "-m", "pagelore", "init"])
 
-    seen = b""
+    # Scope: arrow down to "Every project", enter. Agents: enter with nothing ticked,
+    # which is the default and connects nobody. Store: enter, which is private.
+    script = [(b"Every project", b"\x1b[B\r"),
+              (b"Which agents", b"\r"),
+              (b"memory pages live", b"\r")]
+    seen, deadline = b"", time.time() + 30
     try:
-        while b"Choice" not in seen:
-            chunk = os.read(fd, 4096)
-            if not chunk:
-                break
-            seen += chunk
-        os.write(fd, b"4\n1\n")
-        while True:
+        while script and time.time() < deadline:
+            if select.select([fd], [], [], 0.2)[0]:
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    break
+                seen += chunk
+            expect, keys = script[0]
+            if expect in seen:
+                os.write(fd, keys)
+                script.pop(0)
+                time.sleep(0.15)
+        while time.time() < deadline and b"take it all back out" not in seen:
+            if not select.select([fd], [], [], 0.2)[0]:
+                continue
             chunk = os.read(fd, 4096)
             if not chunk:
                 break
@@ -265,4 +328,11 @@ def test_it_asks_on_a_real_terminal(tmp_path):
         os.close(fd)
         os.waitpid(pid, 0)
 
-    assert b"Which agents should use it?" in seen
+    text = seen.decode("utf-8", "replace")
+    assert not script, f"the wizard never asked: {[e for e, _ in script]}\n{text[-600:]}"
+    assert "\u276f" in text, "the keyboard menu never drew its cursor"
+    assert "Choice (" not in text, "a real terminal was given the numbered prompt"
+    assert "take it all back out" in text, f"the wizard did not finish\n{text[-600:]}"
+    # Nothing was ticked, so nothing may have been written.
+    assert instructions.MARK_BEGIN not in (home / ".claude" / "CLAUDE.md").read_text(
+        encoding="utf-8") if (home / ".claude" / "CLAUDE.md").exists() else True

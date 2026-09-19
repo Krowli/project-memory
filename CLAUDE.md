@@ -71,6 +71,14 @@ page; cross-link with `[[other-slug]]`.
 - `pytest` and `PROJECT_MEMORY_NO_FTS5=1 pytest` both have to pass; the second
   covers the scan ranker that answers when SQLite has no FTS5.
 - `ruff check .` — line length 100, target `py39`.
-- The version is one literal in `src/pagelore/__init__.py`. Nothing else may
-  carry it; `tests/test_version_is_single_sourced.py` enforces that.
+- The version is one literal in `src/pagelore/__init__.py`, plus the copy in
+  `npm/package.json` that npm cannot derive. `tests/test_version_is_single_sourced.py`
+  enforces that. After a bump, regenerate the pointer file, which carries a version
+  stamp, and refresh the editable install so its metadata agrees:
+
+  ```bash
+  python3 -c "import sys; sys.path.insert(0,'src'); from pagelore import instructions; \
+    open('AGENTS.md','w').write(instructions.render())"
+  pip install -e .
+  ```
 - No proposal lands without a number from `evals/` or a failing test it fixes.

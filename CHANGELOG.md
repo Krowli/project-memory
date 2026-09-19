@@ -6,6 +6,49 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-19
+
+`lore init` got an arrow-key menu and a question it was missing. Both came from the
+first person to run it, whose reaction to typing a digit at a wall of text was that
+it looked nothing like a normal command-line tool. That was fair, and the honest
+answer was that fifteen tests checked whether the wizard did the right thing and not
+one of them looked at what using it was like.
+
+### Added
+
+- **A third question: where this applies.** The wizard offered three files and all
+  three were global. The screen said "applies to every project" and gave no
+  alternative, which is a notice rather than a choice. Now the first question is
+  "this project only" or "every project", and the project answer writes into that
+  repository's own `CLAUDE.md`, `GEMINI.md` or `AGENTS.md`. `--scope project` is the
+  same answer for a script, and it says so rather than guessing when there is no
+  repository to scope to.
+- **Arrow keys.** Up and down move, space ticks a box, enter confirms, escape skips,
+  and the list is redrawn in place. Digits still work for anyone who ignores all of
+  that. Where there is no terminal to put into raw mode — a pipe, a CI job, a test —
+  the numbered prompt is used exactly as before, which is why `lore init --agent
+  claude --yes` keeps working in scripts and why every existing test of these
+  questions still drives the same path.
+- Paths in the menus are shown as `~/…` rather than in full, so the rows stop
+  wrapping and stay readable at a glance.
+
+### Fixed
+
+- The terminal was switched into raw mode per keypress, leaving it cooked in
+  between. A key pressed in that window was echoed onto the screen as `^[[B` and
+  then discarded, because `tty.setraw` defaults to `TCSAFLUSH`, which throws away
+  queued input — so the menu looked broken and then waited forever for a key that
+  had already been pressed. Raw mode is now held for the whole question and entered
+  before the question is printed, closing the window entirely.
+
+### Notes
+
+Key handling is a pure function over byte sequences, including the two forms of
+arrow escape that terminals send and the Windows two-byte form, because terminal
+behaviour cannot be asserted from a test that has no terminal. Two pty tests cover
+the wiring those cannot reach: one drives arrows through the menu directly, the other
+drives the whole wizard.
+
 ## [0.4.0] - 2026-09-19
 
 Read the first two entries before you upgrade. The second one describes a failure

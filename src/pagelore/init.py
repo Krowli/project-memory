@@ -1,8 +1,14 @@
 """`lore init` — connect an agent to the memory, and decide where a store lives.
 
-Two questions, and nothing else. They are the only part of the old shell installer
+Three questions, and nothing else. They are the only part of the old shell installer
 that packaging does not subsume: pipx knows how to put a program on PATH and
 nothing about which file an agent reads.
+
+The first question is scope, and it exists because it was missing. The wizard used
+to offer three files and all three were global; the screen said "applies to every
+project" and gave no alternative, which is a notice rather than a choice. The first
+person to run it wanted the line in one project's own `CLAUDE.md` and had no way to
+say so.
 
 Both are previewed before anything is written and confirmed before anything is
 changed, because the target is the user's own global configuration. The default
@@ -22,7 +28,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import instructions
+from . import instructions, menu
 from .cli import add_version
 from .lib import TRACKED_MARKER
 
@@ -33,8 +39,38 @@ AGENTS = {
     "gemini": ("Gemini CLI", Path.home() / ".gemini" / "GEMINI.md", "include"),
     "codex": ("Codex CLI", Path.home() / ".codex" / "AGENTS.md", "paste"),
 }
+# The same three agents, per project. A project file is read only inside that
+# repository, so this is the answer for someone who wants the memory in one place
+# and not on every project they open for the rest of the year.
+PROJECT_FILES = {"claude": "CLAUDE.md", "gemini": "GEMINI.md", "codex": "AGENTS.md"}
 ORDER = ("claude", "gemini", "codex")
 STORE_MODES = ("gitignored", "tracked", "home")
+SCOPES = ("global", "project")
+
+
+def target_for(key: str, root: Path | None) -> tuple[str, Path, str]:
+    """The label, file and mechanism for one agent at the chosen scope.
+
+    `root` is the project when the answer was "this project only" and None when it
+    was "every project". Codex still gets the text pasted rather than an import,
+    because it documents no import syntax at either scope.
+    """
+    label, target, kind = AGENTS[key]
+    if root is not None:
+        target = root / PROJECT_FILES[key]
+    return label, target, kind
+
+
+def short(path) -> str:
+    """`~/...` instead of the whole absolute path.
+
+    The wizard shows a file path on every row of every question, and at full length
+    they wrap and the list stops being readable at a glance. The `~` form is also
+    what a person would type back.
+    """
+    text = str(path)
+    home = str(Path.home())
+    return "~" + text[len(home):] if text.startswith(home + "/") else text
 
 
 def _project_root() -> Path | None:
@@ -67,10 +103,10 @@ Or without questions:
   {cmd} init --store tracked --yes""", file=out)
 
 
-def _write_agents(chosen: list[str], cmd: str, out) -> None:
+def _write_agents(chosen: list[str], cmd: str, out, root: Path | None = None) -> None:
     block_file = instructions.block_path()
     for key in chosen:
-        _, target, kind = AGENTS[key]
+        _, target, kind = target_for(key, root)
         body = f"@{block_file}" if kind == "include" else instructions.render(cmd).strip()
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -83,12 +119,12 @@ def _write_agents(chosen: list[str], cmd: str, out) -> None:
             print(f"skipped:   {target} ({exc})", file=out)
 
 
-def _preview(chosen: list[str], cmd: str, out) -> None:
+def _preview(chosen: list[str], cmd: str, out, root: Path | None = None) -> None:
     block_file = instructions.block_path()
     lines = instructions.render(cmd).strip().count("\n") + 1
     print("\nThis will change:", file=out)
     for key in chosen:
-        _, target, kind = AGENTS[key]
+        _, target, kind = target_for(key, root)
         print(f"  {target}", file=out)
         if kind == "include":
             print(f"      + @{block_file}", file=out)
@@ -151,6 +187,9 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
     add_version(ap)
     ap.add_argument("--agent", action="append", default=[], choices=sorted(AGENTS),
                     help="connect this agent; repeatable; implies --yes")
+    ap.add_argument("--scope", choices=SCOPES, default=None,
+                    help="global: every project on this machine (default). "
+                         "project: only the repository you are standing in")
     ap.add_argument("--store", choices=STORE_MODES, help="where this project's pages live")
     ap.add_argument("--command", default=None,
                     help="the command name to write into the block (default: how you ran this)")
@@ -174,54 +213,72 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
 
     if interactive is None:
         interactive = bool(getattr(inp, "isatty", lambda: False)()) and not args.yes
-    flags_given = bool(args.agent or args.store)
+    # Arrows need a terminal that can be put into raw mode. A test driving StringIO
+    # and a CI job driving a pipe both take the numbered path, which is why every
+    # test of these questions keeps working unchanged.
+    keyboard = interactive and menu.has_keyboard(inp)
+    flags_given = bool(args.agent or args.store or args.scope)
+    root = _project_root()
 
+    # 1. Scope. Asked only when there is a project to choose, and only when the
+    #    answer would change something: outside a repository there is no second
+    #    option to offer.
+    scope = args.scope
+    if scope is None:
+        scope = "global"
+        if root is not None and interactive and not args.agent:
+            picked = menu.ask(
+                "Where should this apply?",
+                "The line is read by the agent, so this decides which projects see it.",
+                [("project", "This project only", short(root)),
+                 ("global", "Every project", "on this machine")],
+                cursor=0, stdin=inp, out=out, keyboard=keyboard)
+            scope = picked[0] if picked else "global"
+    scope_root = root if scope == "project" else None
+    if scope == "project" and root is None:
+        print("--scope project needs a git repository; using the global files instead",
+              file=out)
+        scope_root = None
+
+    # 2. Agents.
     chosen = list(dict.fromkeys(args.agent))
     if not chosen and interactive:
-        print("\nWhich agents should use it? The line goes into that agent's own instruction\n"
-              "file, and it applies to every project you open with that agent.\n", file=out)
-        for i, key in enumerate(ORDER, 1):
-            label, target, _ = AGENTS[key]
-            print(f"  {i}) {label:<13} {target}", file=out)
-        print("  4) none — show me what to add and I will do it myself  [default]\n", file=out)
-        print("Choice (several allowed, e.g. 1 3): ", end="", file=out, flush=True)
-        picks = (inp.readline() or "").split()
-        chosen = [ORDER[int(p) - 1] for p in picks if p.isdigit() and 1 <= int(p) <= 3]
-        if picks and not chosen:
-            print(f"nothing recognised in \"{' '.join(picks)}\"", file=out)
+        where = f"in {short(scope_root)}" if scope_root else "for every project on this machine"
+        chosen = menu.ask(
+            "Which agents should use it?",
+            f"The line goes into that agent's own instruction file, {where}.",
+            [(key, target_for(key, scope_root)[0], short(target_for(key, scope_root)[1]))
+             for key in ORDER] + [("", "none", "show me what to add and I will do it myself")],
+            multi=True, cursor=0, stdin=inp, out=out, keyboard=keyboard)
+        chosen = [key for key in chosen if key]
 
     if chosen:
         confirmed = args.yes or flags_given
         if not confirmed and interactive:
-            _preview(chosen, cmd, out)
-            print("Write it? [Y/n]: ", end="", file=out, flush=True)
-            answer = (inp.readline() or "").strip().lower()
-            confirmed = answer in ("", "y", "yes")
+            _preview(chosen, cmd, out, scope_root)
+            confirmed = menu.confirm("Write it?", stdin=inp, out=out, keyboard=keyboard)
             if not confirmed:
                 print("nothing written", file=out)
         if confirmed:
-            _write_agents(chosen, cmd, out)
+            _write_agents(chosen, cmd, out, scope_root)
             print("\nStart a new agent session for it to take effect.", file=out)
         else:
             manual(cmd, out)
     else:
         manual(cmd, out)
 
-    root = _project_root()
+    # 3. Where this project's pages live.
     if root is not None and (args.store or interactive):
         mode = args.store
         if mode is None:
-            print(f"\nWhere should this project's memory pages live?   {root}\n", file=out)
-            print("  1) .memory/ here, private — appears on the first write, gitignored  [default]",
-                  file=out)
-            print("  2) .memory/ here, committed to git — reviewed in PRs, shared with the team",
-                  file=out)
-            print(f"  3) ~/.project-memory/{root.name}/ — outside the repo, via a .memory/ symlink\n",
-                  file=out)
-            print("Choice [1]: ", end="", file=out, flush=True)
-            answer = (inp.readline() or "").strip()
-            mode = {"": "gitignored", "1": "gitignored", "2": "tracked",
-                    "3": "home"}.get(answer, "gitignored")
+            picked = menu.ask(
+                f"Where should this project's memory pages live?   {short(root)}",
+                "",
+                [("gitignored", "Private", "appears on the first write, gitignored"),
+                 ("tracked", "Committed", "reviewed in pull requests, shared with the team"),
+                 ("home", "Outside the repo", f"~/.project-memory/{root.name}/ via a symlink")],
+                cursor=0, stdin=inp, out=out, keyboard=keyboard)
+            mode = picked[0] if picked else "gitignored"
         _apply_store(mode, root, out)
 
     if not interactive and not flags_given:
