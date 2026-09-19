@@ -144,9 +144,11 @@ jobs:
       id-token: write          # provenance, so the tarball is traceable to this run
     steps:
       - uses: actions/checkout@v5
+      # Node 24 because trusted publishing needs npm 11.5.1 and Node 22.14; the 22
+      # line in the tool cache ships npm 10 and would fall back to asking for a token.
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
       # Published from the package directory with no argument, which packs through
@@ -156,12 +158,26 @@ jobs:
       # `npm/pagelore-0.4.0.tgz` and failed on an SSH key. A leading `./` would also
       # fix it, but publishing the directory is npm's ordinary path and has no spec
       # to misread at all.
+      #
+      # No token. npm's trusted publishing signs a short-lived OIDC credential from
+      # this workflow, the same arrangement PyPI uses above. 0.4.0 was published by
+      # hand because a trusted publisher can only be configured on a package that
+      # already exists, and getting there through a token cost four failed runs:
+      # classic automation tokens were removed in November 2025, and a granular token
+      # needs a separate `Bypass 2FA` option that takes precedence over every
+      # account-level setting. npm is also removing direct publishing by such tokens
+      # in January 2027, so OIDC is the only arrangement with a future.
       - name: Publish
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry-run) }}
         working-directory: npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          if npm view "pagelore@$version" version >/dev/null 2>&1; then
+            echo "pagelore@$version is already on the registry; nothing to do"
+            exit 0
+          fi
+          npm publish --provenance --access public
 
       - name: Dry run
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
