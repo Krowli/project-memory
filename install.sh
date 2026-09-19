@@ -7,6 +7,7 @@
 #   ./install.sh --store home                 # skip the storage question
 #   ./install.sh --no-store                   # install the skill and nothing else
 #   ./install.sh --check                      # what is installed, and is there anything newer
+#   ./install.sh --uninstall                  # remove the skill; your notes are left alone
 #   ./install.sh --interpreter py             # force the Python the install is verified with
 #
 # By default this installs the latest released tag, not the tip of main, so an
@@ -40,6 +41,7 @@ SCOPE="user"
 STORE_MODE="${PROJECT_MEMORY_STORE:-}"
 NO_STORE=0
 CHECK=0
+UNINSTALL=0
 PYTHON="${PROJECT_MEMORY_PYTHON:-}"
 
 while [ $# -gt 0 ]; do
@@ -49,8 +51,9 @@ while [ $# -gt 0 ]; do
     --store)    STORE_MODE="${2:?--store needs gitignored|tracked|home}"; shift 2 ;;
     --no-store) NO_STORE=1; shift ;;
     --check)    CHECK=1; shift ;;
+    --uninstall) UNINSTALL=1; shift ;;
     --interpreter) PYTHON="${2:?--interpreter needs a command}"; shift 2 ;;
-    -h|--help)  sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,33p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -62,6 +65,44 @@ esac
 
 if [ -z "$DEST" ]; then
   if [ "$SCOPE" = "project" ]; then DEST="$PWD/.agents/skills"; else DEST="$HOME/.agents/skills"; fi
+fi
+
+# ── removal ──────────────────────────────────────────────────────────────────
+# Before the git and Python checks, because taking the skill off a machine must
+# not depend on the toolchain that put it there. It removes exactly what the
+# install created and says what it deliberately left: the pages are the user's,
+# and a program that can delete them by accident is worse than no uninstaller.
+if [ "$UNINSTALL" = "1" ]; then
+  target="$DEST/$NAME"
+  removed=0
+
+  # Claude Code reads the skill through a symlink the install made. Only a link
+  # that resolves to the directory being removed is ours; one pointing anywhere
+  # else belongs to someone, and guessing by name would delete their work.
+  if [ -d "$target" ]; then
+    real="$(cd "$target" && pwd -P)"
+    for link in "$HOME/.claude/skills/$NAME" "$PWD/.claude/skills/$NAME"; do
+      if [ -L "$link" ] && [ -d "$link" ] && [ "$(cd "$link" && pwd -P)" = "$real" ]; then
+        rm -f "$link"
+        echo "removed:   $link"
+        removed=1
+      fi
+    done
+    rm -rf "$target"
+    echo "removed:   $target"
+    removed=1
+  fi
+
+  [ "$removed" = "1" ] || echo "nothing to remove: no skill at $target"
+
+  cat <<'MSG'
+
+Left alone on purpose:
+  .memory/ in your projects   your pages — delete a store yourself if you mean to
+  your agent's instruction file   remove the line naming this skill by hand
+  any agent definition you wrote   yours to keep or delete
+MSG
+  exit 0
 fi
 
 command -v git >/dev/null || { echo "git is required" >&2; exit 1; }

@@ -137,6 +137,29 @@ Two things follow an update on their own. The instruction block is included by
 path rather than copied, so it is always whatever the installed skill says — see
 below. And the store is yours: an update replaces code, never pages.
 
+### Removing it
+
+```bash
+./install.sh --uninstall
+```
+
+It removes the skill directory and the symlink the install made, prints each
+path it deleted, and stops. It does **not** touch three things, and says so:
+
+- **`.memory/` in your projects.** Those are your pages, not this program. Delete
+  a store yourself, one at a time, when you mean to: `rm -rf <project>/.memory`.
+- **The line you added to your agent's instruction file.** Remove
+  `@~/.agents/skills/project-memory/USE.md` from `~/.claude/CLAUDE.md` by hand.
+- **Any agent definition you wrote** that names the skill, such as
+  `~/.claude/agents/memory-keeper.md`.
+
+A symlink is removed only when it resolves to the directory being deleted, so a
+link of yours pointing somewhere else is left alone.
+
+Installed as a plugin instead of by `install.sh`, use the agent's own command:
+`/plugin uninstall project-memory@project-memory` in Claude Code,
+`gemini extensions uninstall project-memory` in Gemini CLI.
+
 ## Make it automatic: one line per agent
 
 There are no hooks. Earlier versions carried three Claude Code hooks — announce

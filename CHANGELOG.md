@@ -6,6 +6,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-19
+
+### Added
+
+- **`./install.sh --uninstall`.** There was no way to take the skill off a
+  machine, so the only instruction anyone could be given was a pair of
+  `rm -rf` typed by hand, next to a directory of the user's own pages. It
+  removes the skill directory and the symlink the install made, names every
+  path it deletes, and leaves three things while saying so: the `.memory/`
+  stores in your projects, the line you added to your agent's instruction file,
+  and any agent definition you wrote. A symlink is removed only when it
+  resolves to the directory being deleted, so a link of yours pointing
+  elsewhere survives. It runs before the git and Python checks, because taking
+  a program off a machine must not depend on the toolchain that put it there.
+  README documents it.
+
 ## [0.3.1] - 2026-09-19
 
 ### Changed
@@ -344,7 +360,8 @@ they found, all of it now covered by a test that fails when the fix is removed:
 - Claude Code plugin and marketplace manifests.
 - Test suite covering search, writing, frontmatter tolerance and manifests.
 
-[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Krowli/project-memory/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Krowli/project-memory/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Krowli/project-memory/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Krowli/project-memory/compare/v0.2.1...v0.2.2

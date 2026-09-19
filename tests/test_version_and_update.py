@@ -118,3 +118,56 @@ def test_the_installer_places_the_skill_and_touches_no_settings(tmp_path):
     run = subprocess.run([sys.executable, str(search), "--store", str(tmp_path / "none"),
                           "anything"], capture_output=True, text=True, cwd=tmp_path)
     assert run.returncode == 0, run.stderr
+
+
+@conftest.needs_posix
+def test_uninstall_removes_the_skill_and_the_symlink_and_nothing_else(tmp_path):
+    """A program that installs itself has to be able to take itself off. The
+    first version of this repository had no uninstaller at all, so the only
+    instruction anyone could be given was a pair of `rm -rf` typed by hand —
+    next to a directory of the user's own pages."""
+    home = tmp_path / "home"
+    (home / ".claude" / "skills").mkdir(parents=True)
+    dest = tmp_path / "skills"
+    branch = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"],
+                            capture_output=True, text=True).stdout.strip()
+    env = {**os.environ, "HOME": str(home), "PROJECT_MEMORY_REPO": str(REPO),
+           "PROJECT_MEMORY_REF": branch if branch and branch != "HEAD" else "main"}
+
+    installed = subprocess.run(["bash", str(INSTALL), "--no-store", "--dest", str(dest)],
+                               capture_output=True, text=True, env=env)
+    assert installed.returncode == 0, installed.stderr
+    skill = dest / "project-memory"
+    link = home / ".claude" / "skills" / "project-memory"
+    assert skill.is_dir() and link.is_symlink()
+
+    # A store, and a link of someone else's pointing elsewhere: neither is ours.
+    store = tmp_path / "project" / ".memory"
+    store.mkdir(parents=True)
+    (store / "a-page.md").write_text("---\nslug: a-page\n---\n\nkeep me\n", encoding="utf-8")
+    other = home / ".claude" / "skills" / "someone-elses"
+    other.symlink_to(tmp_path)
+
+    out = subprocess.run(["bash", str(INSTALL), "--uninstall", "--dest", str(dest)],
+                         capture_output=True, text=True, env=env)
+    assert out.returncode == 0, out.stderr
+    assert not skill.exists(), "the skill directory survived"
+    assert not link.exists(), "the symlink survived"
+    assert (store / "a-page.md").read_text(encoding="utf-8") == \
+        "---\nslug: a-page\n---\n\nkeep me\n", "uninstall touched a store"
+    assert other.is_symlink(), "uninstall removed a link it did not create"
+    assert ".memory/" in out.stdout, "uninstall does not say what it left behind"
+
+
+@conftest.needs_posix
+def test_uninstall_says_so_when_there_is_nothing_to_remove(tmp_path):
+    out = subprocess.run(["bash", str(INSTALL), "--uninstall", "--dest", str(tmp_path / "nope")],
+                         capture_output=True, text=True,
+                         env={**os.environ, "HOME": str(tmp_path)})
+    assert out.returncode == 0, out.stderr
+    assert "nothing to remove" in out.stdout
+
+
+def test_the_readme_documents_how_to_remove_it():
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert "--uninstall" in readme
