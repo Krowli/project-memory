@@ -178,6 +178,15 @@ jobs:
             exit 0
           fi
           npm publish --provenance --access public
+          # npm answers before the version is readable: "your package is being
+          # processed and may take a few minutes to become available". A `curl` run
+          # straight after a green job returns 404 and looks like a silent failure,
+          # so the job waits for the thing it just claimed to have done.
+          for _ in $(seq 1 30); do
+            npm view "pagelore@$version" version >/dev/null 2>&1 && exit 0
+            sleep 10
+          done
+          echo "::warning::published but not yet visible on the registry after five minutes"
 
       - name: Dry run
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
