@@ -188,9 +188,22 @@ jobs:
         with:
           name: dist
           path: .
+      # Create or update, because this job is re-run: 0.4.0 needed three attempts
+      # before npm was sorted out, and `gh release create` fails outright on a tag
+      # that already has a release. A step in a release workflow that cannot be
+      # repeated turns one bad attempt into a dead version number.
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" --notes-file RELEASE_BODY.md \
-            dist/* npm/pagelore-*.tgz
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" --notes-file RELEASE_BODY.md
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber \
+              dist/* npm/pagelore-*.tgz
+            echo "updated the existing release"
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" --notes-file RELEASE_BODY.md \
+              dist/* npm/pagelore-*.tgz
+          fi
