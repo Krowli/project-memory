@@ -6,7 +6,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-19
+
 ### Changed
+
+- **README documents how an update actually reaches a user**, per install path,
+  because it does not reach them by itself: Claude Code leaves auto-update off
+  by default for third-party marketplaces, and a `curl` install has no update
+  channel at all beyond `./install.sh --check`. Everything in 0.3.0 that came
+  after the tag — the shipped instruction block and the 3.9 floor — was
+  unreachable for anyone who had already installed, because a user only
+  receives an update when the manifest version changes. Hence this release.
 
 - **The Python floor drops from 3.11 to 3.9**, which is what a stock macOS
   already ships — until now `install.sh` refused the interpreter at
@@ -334,7 +344,8 @@ they found, all of it now covered by a test that fails when the fix is removed:
 - Claude Code plugin and marketplace manifests.
 - Test suite covering search, writing, frontmatter tolerance and manifests.
 
-[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Krowli/project-memory/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Krowli/project-memory/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Krowli/project-memory/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Krowli/project-memory/compare/v0.2.0...v0.2.1

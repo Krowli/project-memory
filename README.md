@@ -113,6 +113,30 @@ At runtime the scripts resolve the store as `$PROJECT_MEMORY_DIR` if set,
 otherwise the nearest `.memory/` walking up from the working directory — so the
 `home` mode's symlink works with no extra configuration.
 
+### Updating
+
+An update reaches you only when the version number changes, and how it reaches
+you depends on how you installed it.
+
+| installed with | how an update arrives |
+|---|---|
+| Claude Code plugin | in the background shortly after a session starts, **if auto-update is on for this marketplace** — it is off by default for third-party marketplaces like this one. Turn it on in `/plugin` → **Marketplaces** → *Enable auto-update*, or pull one by hand with `/plugin marketplace update project-memory`. When a plugin updates you are prompted to run `/reload-plugins` |
+| Gemini CLI | `gemini extensions update project-memory` |
+| Codex, Cursor, Kimi | that agent's own plugin update command |
+| `curl … install.sh` | nothing happens on its own. `./install.sh --check` prints what is installed and what is newest; re-running the install command updates in place |
+
+```bash
+./install.sh --check      # installed: 0.3.0 / latest: v0.3.1 / update: available
+```
+
+Nothing phones home and nothing checks for a new version behind your back: the
+skill makes no network calls at all, which is also why it needs no API key. The
+price of that is that an update is something you ask for.
+
+Two things follow an update on their own. The instruction block is included by
+path rather than copied, so it is always whatever the installed skill says — see
+below. And the store is yours: an update replaces code, never pages.
+
 ## Make it automatic: one line per agent
 
 There are no hooks. Earlier versions carried three Claude Code hooks — announce
