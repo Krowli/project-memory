@@ -21,12 +21,15 @@ jobs:
         include:
           # 3.9 is the floor because it is what a stock macOS ships, so the
           # floor has to be tested rather than declared. actions/python-versions
-          # has no darwin-arm64 or win32 build of 3.9, hence macos-13 (Intel)
-          # and no Windows row: on Windows a user installs Python anyway and
-          # gets a current one.
+          # publishes 3.9 for darwin-x64 but not darwin-arm64 or win32, so the
+          # macOS row is the Intel image and there is no Windows row: on Windows
+          # a user installs Python anyway and gets a current one. `macos-13` is
+          # the wrong label for that Intel image — it is being retired and a job
+          # asking for it sits in the queue forever without ever starting, which
+          # leaves the whole run incomplete rather than red.
           - os: ubuntu-latest
             python: "3.9"
-          - os: macos-13
+          - os: macos-15-intel
             python: "3.9"
     steps:
       - uses: actions/checkout@v5
