@@ -16,7 +16,7 @@ from pathlib import Path
 # and a test fails if any of them drift — but none of those files is importable,
 # and until this existed neither the user nor the agent could tell which version
 # was actually on disk.
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 
 STORE_ENV = "PROJECT_MEMORY_DIR"
 STORE_DIRNAME = ".memory"

@@ -1,4 +1,4 @@
-<!-- project-memory 0.3.2 — the block an agent reads every turn. Where an agent can
+<!-- project-memory 0.3.3 — the block an agent reads every turn. Where an agent can
      include a file by path, point at this one rather than copying it: a copy goes
      stale on the next release and nothing says so. -->
 

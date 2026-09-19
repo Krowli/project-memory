@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.9+, which is what a stock macOS already has. No network access and no API keys needed.
 metadata:
   repository: https://github.com/Krowli/project-memory
-  version: "0.3.2"
+  version: "0.3.3"
 ---
 
 # Project memory

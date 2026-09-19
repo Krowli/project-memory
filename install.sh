@@ -107,6 +107,33 @@ fi
 
 command -v git >/dev/null || { echo "git is required" >&2; exit 1; }
 
+# ── scope ────────────────────────────────────────────────────────────────────
+# Asked only when it is a real question: a terminal to answer on, no --project
+# or --dest already deciding it, and a repository under foot for option 2 to
+# mean anything. Run from nowhere in particular, or piped through CI, it stays
+# global without stalling. It used to install globally in silence even when the
+# user was standing in a project, which reads as the script having no opinion
+# to offer rather than having made a choice.
+if [ "$SCOPE" = "user" ] && [ -z "$DEST" ] && [ -r /dev/tty ] \
+   && git rev-parse --show-toplevel >/dev/null 2>&1; then
+  here="$(git rev-parse --show-toplevel)"
+  cat <<ASK
+
+Install the skill for every project, or only for this one?
+
+  1) every project on this machine — ~/.agents/skills  [default]
+  2) only $here — .agents/skills, committed with the repo
+
+ASK
+  printf 'Choice [1]: '
+  read -r scope_choice </dev/tty || scope_choice=""
+  case "${scope_choice:-1}" in
+    1|"") ;;
+    2)    SCOPE="project"; DEST="$PWD/.agents/skills" ;;
+    *)    echo "unrecognised choice, installing for every project" ;;
+  esac
+fi
+
 # `python3` is not a command name you can count on. On Windows the installer puts
 # `python`, `py` and `pymanager` on PATH and no `python3` at all. Resolve a
 # working interpreter once, here, so the install can be verified with it; the
@@ -197,7 +224,31 @@ $PYTHON "$DEST/$NAME/scripts/memory_search.py" --help >/dev/null \
 # the files from the repository.
 rm -rf "$DEST/$NAME/scripts/__pycache__"
 
-[ "$NO_STORE" = "1" ] && { echo; echo "Store not created (--no-store)."; exit 0; }
+# The one thing a user must do by hand, printed at the one moment they are
+# looking. Without it the scripts sit on disk and the agent may never reach for
+# them, which is the difference between installed and working — and the
+# installer used to end without mentioning it at all.
+next_steps() {
+  cat <<MSG
+
+Next: tell your agent it has a memory. One line, once.
+
+  Claude Code     add to ~/.claude/CLAUDE.md
+  Gemini CLI      add to ~/.gemini/GEMINI.md
+
+      @$DEST/$NAME/USE.md
+
+  Codex CLI       paste that file's contents into ~/.codex/AGENTS.md
+  Cursor          paste them into Customize → Rules
+
+Per project instead of per machine: put the same line in the project's own
+CLAUDE.md or AGENTS.md. Only one agent: put it in that agent's definition.
+
+To remove everything this installed:  ./install.sh --uninstall
+MSG
+}
+
+[ "$NO_STORE" = "1" ] && { echo; echo "Store not created (--no-store)."; next_steps; exit 0; }
 
 # A global install is not standing in any particular project, and it will meet
 # many. Stores appear on their own at the first write and shield themselves as
@@ -212,6 +263,7 @@ created — nothing to set up per project.
 To commit the notes in some project instead, run this there:
   ./install.sh --project --store tracked
 MSG
+  next_steps
   exit 0
 fi
 
@@ -277,8 +329,4 @@ case "$STORE_MODE" in
     echo "store:     $target  (outside the repo, reached via .memory/ symlink)" ;;
 esac
 
-cat <<MSG
-
-Next: add the snippet from this repo's AGENTS.md to your project's AGENTS.md if
-your agent does not discover skills on its own.
-MSG
+next_steps

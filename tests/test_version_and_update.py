@@ -171,3 +171,46 @@ def test_uninstall_says_so_when_there_is_nothing_to_remove(tmp_path):
 def test_the_readme_documents_how_to_remove_it():
     readme = (REPO / "README.md").read_text(encoding="utf-8")
     assert "--uninstall" in readme
+
+
+@conftest.needs_posix
+def test_the_install_ends_by_naming_the_line_that_makes_it_work(tmp_path):
+    """The scripts on disk are half the install; the agent only reaches for them
+    once the instruction block is in its configuration. The installer used to end
+    without mentioning that at all, so a user who ran one command was finished
+    and had no way to know they were not."""
+    home = tmp_path / "home"
+    home.mkdir()
+    branch = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"],
+                            capture_output=True, text=True).stdout.strip()
+    dest = tmp_path / "skills"
+    out = subprocess.run(
+        ["bash", str(INSTALL), "--no-store", "--dest", str(dest)],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        env={**os.environ, "HOME": str(home), "PROJECT_MEMORY_REPO": str(REPO),
+             "PROJECT_MEMORY_REF": branch if branch and branch != "HEAD" else "main"})
+    assert out.returncode == 0, out.stderr
+
+    named = dest / "project-memory" / "USE.md"
+    assert f"@{named}" in out.stdout, "the install does not print the line to add"
+    assert named.is_file(), "the install names a file it did not place"
+    assert "--uninstall" in out.stdout, "the install does not say how to undo itself"
+
+
+@conftest.needs_posix
+def test_the_scope_question_is_skipped_when_there_is_no_terminal(tmp_path):
+    """`curl … | bash` in CI, a container or a pipeline has nobody to answer. It
+    takes the global install rather than stalling on a prompt no one will see."""
+    home = tmp_path / "home"
+    home.mkdir()
+    dest = tmp_path / "skills"
+    branch = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"],
+                            capture_output=True, text=True).stdout.strip()
+    out = subprocess.run(
+        ["bash", str(INSTALL), "--no-store", "--dest", str(dest)],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, cwd=str(REPO),
+        env={**os.environ, "HOME": str(home), "PROJECT_MEMORY_REPO": str(REPO),
+             "PROJECT_MEMORY_REF": branch if branch and branch != "HEAD" else "main"})
+    assert out.returncode == 0, out.stderr
+    assert "Choice [1]" not in out.stdout
+    assert (dest / "project-memory").is_dir()

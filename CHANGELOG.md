@@ -6,6 +6,24 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-19
+
+### Added
+
+- **The install ends by naming the line that makes it work.** It printed where
+  the files went and stopped, so someone who ran one command was finished and
+  had no way to know they were not: the scripts sit on disk and the agent never
+  reaches for them until the instruction block is in its configuration. The
+  final message now gives that line with the path filled in for the install it
+  just did, the file to put it in for each agent, and the command that undoes
+  the whole thing.
+- **It asks whether to install for every project or only for this one**, when
+  there is a terminal to answer on and a repository under foot for the second
+  option to mean anything. Before, standing inside a project and running it with
+  no flags installed globally in silence, which reads as a script with no
+  opinion rather than one that made a choice. Piped through CI it stays global
+  without stalling.
+
 ## [0.3.2] - 2026-09-19
 
 ### Added
@@ -360,7 +378,8 @@ they found, all of it now covered by a test that fails when the fix is removed:
 - Claude Code plugin and marketplace manifests.
 - Test suite covering search, writing, frontmatter tolerance and manifests.
 
-[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/Krowli/project-memory/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Krowli/project-memory/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Krowli/project-memory/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Krowli/project-memory/compare/v0.2.2...v0.3.0

@@ -77,6 +77,12 @@ code. `PROJECT_MEMORY_REF=main` takes the branch instead. It places the skill in
 `~/.claude/skills/` for Claude Code, verifies the scripts run, and stops. It
 touches no agent's settings.
 
+Run from inside a repository on a terminal, it asks first whether to install for
+every project or only for that one. Piped through CI, or run from nowhere in
+particular, it takes the global install without stalling on a prompt nobody will
+answer. It ends by printing the one line you still have to add yourself, with the
+path filled in for the install it just did, and the command that undoes it.
+
 To update, run the same command again. To see whether that is worth doing:
 
 ```bash
