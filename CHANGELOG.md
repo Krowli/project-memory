@@ -8,25 +8,140 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.4.0] - 2026-09-19
 
-### Changed
+Read the first two entries before you upgrade. The second one describes a failure
+that produces no error message at all.
 
-- **The program is an installed command now, not a directory five plugin systems
-  copy.** `pipx install pagelore` (or `npm install -g pagelore`), then `lore init`.
-  The command an agent runs is `lore search "…"` — no path, correct in every
-  layout instead of one of three. Four things that cost real time this week go
-  away with the old shape: the per-install-mode path, the version living in ten
-  hand-edited places, updates that reached nobody unless a manifest was bumped,
-  and a distribution that had never once contained the program.
-- The package is `pagelore` and the command is `lore` because `project-memory` is
-  already taken on both PyPI and npm by unrelated products in the same niche.
+### Your notes are safe
 
-### Removed
+Nothing about `.memory/` changed — pages, frontmatter, the log and the index are
+byte-compatible, and `lore search` finds every page you already have. There is
+nothing to migrate and nothing to export.
 
-- The skill directory, all six plugin manifests and the Gemini extension file.
-  There is no Agent Skills packaging any more.
+### If you used the `@…/USE.md` include line, your agent will silently load nothing
+
+That file lived in the skill directory, and the skill directory is gone. An `@path`
+pointing at a file that does not exist produces **no error in any harness** — the
+agent simply stops searching, and nothing connects that to the upgrade. If your
+`CLAUDE.md` or `GEMINI.md` contains a line like
+
+    @~/.agents/skills/project-memory/USE.md
+
+it is now dead. Fix:
+
+```bash
+sh install.sh --uninstall      # takes out the old block; or edit the line out yourself
+pipx install pagelore
+lore init                      # writes the new block and offers the new line
+```
+
+`lore init` recognises the old marker and replaces that block rather than adding a
+second one, so forgetting the first step costs you nothing. `lore doctor` reports
+an include pointing at a file that is gone.
+
+### If you pasted the block's text instead, you get a loud error
+
+Codex and Cursor users pasted the text rather than an import. That copy still tells
+the agent to run a script path that no longer exists, so the agent gets
+`No such file or directory` and can tell you about it. Same fix: `lore init`, then
+replace the pasted block.
+
+### Installing it
+
+```bash
+pipx install pagelore          # Python, no Node needed
+npm install -g pagelore        # Node, no pip needed — it vendors the Python
+lore init
+```
+
+`lore init` writes the instruction block, then asks which agent should use it and
+shows the exact line and file before changing anything. Its default connects
+nothing. Inside a git repository it also asks whether this project's pages are
+private or tracked.
+
+`install.sh` and the `curl … | bash` one-liner still exist, because a published URL
+cannot be recalled and deleting the file would pipe GitHub's 404 page into a shell.
+They install nothing now: they print these commands, still run the old
+`--uninstall` path, and exit 1 so a pipeline fails loudly. Scheduled for deletion
+in 0.6.0.
+
+### Why the name changed
+
+The package is `pagelore` and the command is `lore` because `project-memory` and
+`pm` are both already taken on PyPI **and** on npm, by unrelated products in the
+same niche. Not churn — there was no free name to keep.
+
+### Removed: plugin and extension installs
+
+The skill directory, all six plugin manifests and the Gemini extension file are
+gone; there is no Agent Skills packaging any more. If you installed it that way,
+that install is separate and this release cannot reach it:
+
+```
+Claude Code   /plugin uninstall project-memory
+Gemini CLI    gemini extensions uninstall project-memory
+Codex, Cursor, Kimi   remove the directory you pointed them at
+```
+
+The marketplace entry is gone too, so `/plugin marketplace add Krowli/project-memory`
+now 404s. Tag `v0.3.5` is the final plugin release and stays installable.
+
+### What you get for it
+
+- The command an agent runs is `lore search "…"`, with no path in it. It is correct
+  in every layout instead of in one of three. A user hit exactly this in 0.3.4: a
+  project-scoped install, and the documented verification command answered
+  `No such file or directory`. The instruction block carried three sentences
+  explaining which of three layouts you might be in; they are deleted.
+- You can grant an agent `Bash(lore:*)` instead of `Bash(python3:*)` — one program
+  rather than arbitrary Python.
+- Updates arrive with `pipx upgrade pagelore`. Twice this month a change landed on
+  `main` and reached zero users because no manifest was bumped.
+- The block that makes an agent search is refreshed by every `lore` invocation, so
+  a new release does not need you to re-copy anything.
+- `lore doctor` names the three states that used to be invisible: a dangling
+  include, a stale pasted copy, a leftover skill directory.
+- `lore uninstall` takes the block back out. `pipx uninstall` cannot, because it
+  never learns about a file this program edited.
+
+### Changed, under the hood
+
+- One literal in `src/pagelore/__init__.py` is the version. It used to live in ten
+  hand-edited places guarded by five drift tests; `npm/package.json` carries the
+  only remaining copy, because npm cannot read a Python file, and both the packer
+  and a test refuse a mismatch.
+- The built distribution contains the program. Until now it never had: `py-modules
+  = []` in `pyproject.toml` silenced an auto-discovery failure, and every published
+  artefact held LICENSE, README, pyproject and ten test files. CI now opens the
+  wheel and asserts the modules and data files are inside it, installs it with
+  pipx on three operating systems, and uses it the way a user does.
+- Seven tests that checked whether one hard-coded script path resolved in three
+  documented install layouts are deleted, not replaced. That class of test cannot
+  exist any more, which is the clearest single argument for the repackage.
+- The 15 pages in this repository's own store had their `sources:` repointed by
+  `tools/retarget_sources.py` rather than through `lore write`, because
+  `write_page` unions sources and never removes one — amending through the command
+  would have left every page citing both the live path and the dead one, exit 0,
+  silently. `updated:` was not bumped: the content did not change that day, and the
+  date feeds ranking.
 
 ### Added
 
+- **`lore init`, `lore doctor`, `lore uninstall`.** Interactivity in `init` is an
+  injectable parameter defaulting to `isatty()`, so the questions are tested in
+  process with one pty test proving the default wiring. The shell installer this
+  replaces shipped a dead prompt — a question placed after the value it decided —
+  and it passed review because nothing could reach that branch.
+- **`npm install -g pagelore`**, a shim that finds an interpreter and hands it the
+  vendored Python. No pip, no `postinstall`, so `--ignore-scripts` and a corporate
+  registry mirror both work. `python -m pagelore` exits 69 below the Python floor
+  and the shim reads that as "try the next candidate", printing one message after
+  it has tried them all and naming each. Candidate order is platform-specific
+  because Windows has no `python3`. `PROJECT_MEMORY_PYTHON` is exclusive: a named
+  interpreter that does not work fails loudly instead of falling back silently.
+- **`evals/speed.py`**, so the timing table in the README is reproducible. The
+  earlier figures came from an uncommitted script and are superseded rather than
+  comparable. One search end to end, 90 pages: 52 ms warm, 76 ms with the index
+  refused; 1 000 pages: 69 against 341 ms; 5 000 pages: 139 against 1 507 ms.
 - **`evals/mcp_probe.py`**, a stdio MCP server exposing the two tools, and
   `evals/acceptance.py --pointer mcp|mcp+include` to run a real session against
   it. The CLI was chosen early and never measured against MCP; this settles it

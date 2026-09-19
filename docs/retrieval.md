@@ -185,13 +185,21 @@ traceback. Measured end to end, as a shell invocation, on this machine:
 
 | pages | reading every page | warm index | |
 |---|---|---|---|
-| 90 | 235 ms | 99 ms | 2.4x |
-| 1000 | 1887 ms | 174 ms | 10.9x |
-| 5000 | 4637 ms | 196 ms | 23.6x |
+| 90 | 76 ms | 52 ms | 1.5x |
+| 1000 | 341 ms | 69 ms | 4.9x |
+| 5000 | 1507 ms | 139 ms | 10.8x |
 
-A warm search is nearly flat in corpus size; what is left is interpreter startup
-and one `stat()` pass over the store. The ~5000-page ceiling this document used to
-name is gone.
+`python3 evals/speed.py`, one search end to end as a fresh process, median of
+seven, the committed 90-page corpus grown by suffixing slugs. Earlier editions of
+this table carried much larger figures in the first column; those came from a
+script that was never committed and cannot be reproduced, so they are superseded
+rather than compared. Making the number reproducible was the point of writing
+`speed.py`.
+
+A warm search grows slowly in corpus size; what is left is interpreter startup and
+one `stat()` pass over the store. The scan path stays usable to about 1000 pages,
+which is what lets the index be a disposable cache instead of the store. The
+~5000-page ceiling this document used to name is gone.
 
 Six decisions, each bought by a probe rather than a preference:
 
