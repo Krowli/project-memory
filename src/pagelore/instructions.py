@@ -41,14 +41,17 @@ BLOCK = "AGENT.md"
 # `lore uninstall` takes out exactly that and nothing a user wrote around it.
 MARK_BEGIN = ("<!-- pagelore: managed by `lore init` — delete to the matching end "
               "marker to disconnect -->")
-MARK_END = "<!-- project-memory: end -->"
-# What `install.sh` wrote before 0.4.0. Matched on the way in, so a user upgrading
-# does not end up with two blocks, one of them pointing at a deleted directory.
+MARK_END = "<!-- pagelore: end -->"
+# What `install.sh` wrote before 0.4.0, with its own end marker: a block left by the
+# shell installer has to be matched byte for byte to be removed, and it is matched on
+# the way in so that a user upgrading does not end up with two blocks, one of them
+# pointing at a directory that is gone.
 MARK_LEGACY = ("<!-- project-memory: installed by install.sh — delete to this file's "
                "matching end marker to disconnect -->")
+MARK_LEGACY_END = "<!-- project-memory: end -->"
 
 _BLOCK_RE = re.compile(re.escape(MARK_BEGIN) + r".*?" + re.escape(MARK_END) + r"\n?", re.S)
-_LEGACY_RE = re.compile(re.escape(MARK_LEGACY) + r".*?" + re.escape(MARK_END) + r"\n?", re.S)
+_LEGACY_RE = re.compile(re.escape(MARK_LEGACY) + r".*?" + re.escape(MARK_LEGACY_END) + r"\n?", re.S)
 
 
 def home() -> Path:

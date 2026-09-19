@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import os
 import platform
 import sys
 from pathlib import Path
@@ -33,7 +34,20 @@ COMMANDS = ("search", "write", "stats", "init", "doctor", "uninstall")
 NAMES = ("lore", "pagelore")
 
 
+INVOKED_AS_ENV = "PAGELORE_INVOKED_AS"
+
+
 def invoked_as() -> str:
+    """Which of the two names was typed.
+
+    A console script puts it in `argv[0]`. `python -m pagelore` puts `__main__.py`
+    there instead, which is why the npm shim passes the name it was invoked by in
+    the environment: it installs both names as links to one file, and the block it
+    writes has to name the one that will still be there tomorrow.
+    """
+    named = os.environ.get(INVOKED_AS_ENV, "")
+    if named in NAMES:
+        return named
     name = Path(sys.argv[0] or NAMES[0]).name
     if name.endswith(".exe"):
         name = name[: -len(".exe")]

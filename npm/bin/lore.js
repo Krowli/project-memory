@@ -25,6 +25,14 @@ const { spawnSync } = require("child_process");
 const path = require("path");
 
 const VENDOR = path.join(__dirname, "..", "vendor");
+// The name the user actually typed. npm installs both `lore` and `pagelore` as
+// links to this file, and node keeps the invoked link in argv[1], so the Python
+// can put the right one in its messages and — the part that matters — in the
+// instruction block it writes. Without this, someone whose machine already has a
+// different `lore` installs pagelore, runs `pagelore init`, and the block tells
+// their agent to run `lore`: the other program. That is the exact failure the
+// second name exists to prevent.
+const INVOKED_AS = path.basename(process.argv[1] || "lore").replace(/\.js$/, "");
 const FLOOR = "3.9";
 const TOO_OLD = 69;
 
@@ -50,6 +58,7 @@ function run() {
     // Vendored source in a global npm prefix is often not writable, and a failed
     // write of a .pyc is a warning nobody can act on.
     PYTHONDONTWRITEBYTECODE: "1",
+    PAGELORE_INVOKED_AS: INVOKED_AS,
   });
 
   const tried = [];

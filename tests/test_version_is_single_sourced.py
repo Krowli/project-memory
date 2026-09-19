@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 import pagelore
+from pagelore import cli
 
 REPO = Path(__file__).resolve().parents[1]
 TRUTH = REPO / "src" / "pagelore" / "__init__.py"
@@ -115,6 +116,8 @@ def test_the_python_floor_is_declared_and_enforced_in_one_shape():
         text = shim.read_text(encoding="utf-8")
         assert f'const FLOOR = "{floor}"' in text, "the npm shim names another floor"
         assert "const TOO_OLD = 69" in text, "the shim and __main__.py must agree on 69"
+        assert cli.INVOKED_AS_ENV in text, \
+            "the shim must pass the invoked name, or the npm route writes the wrong command"
         assert "raise SystemExit(69)" in main, "__main__.py must exit 69 for the shim"
 
     ci = REPO / ".github" / "workflows" / "test.yml"

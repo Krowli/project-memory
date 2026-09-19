@@ -75,6 +75,22 @@ def test_the_bare_command_says_so_when_nothing_is_connected(tmp_path, monkeypatc
     assert "Run `lore init`" not in usage("lore")
 
 
+def test_the_npm_route_can_say_which_of_the_two_names_was_typed(monkeypatch):
+    """A console script leaves the name in `argv[0]`; `python -m pagelore` leaves
+    `__main__.py`. So the npm shim passes it in the environment, and it has to be
+    honoured — otherwise someone whose machine already has a different `lore`
+    installs this, runs `pagelore init`, and the block tells their agent to run
+    `lore`: the other program."""
+    from pagelore import cli
+
+    monkeypatch.setenv(cli.INVOKED_AS_ENV, "pagelore")
+    assert cli.invoked_as() == "pagelore"
+    assert "pagelore search" in instructions.render(cli.invoked_as())
+
+    monkeypatch.setenv(cli.INVOKED_AS_ENV, "not-one-of-ours")
+    assert cli.invoked_as() in ("lore", "pagelore"), "a junk value must not reach the block"
+
+
 def test_a_refresh_never_creates_the_directory_it_writes_into(tmp_path, monkeypatch):
     """Its existence is the opt-in signal. A search run in a project that never
     asked for any of this must not leave a directory in $HOME — the same rule that
@@ -114,11 +130,12 @@ def test_a_pre_0_4_block_is_replaced_rather_than_duplicated():
     the new marker would leave them with two blocks, one of them dead — the exact
     duplication the fencing exists to prevent."""
     legacy = (f"# My rules\n\n{instructions.MARK_LEGACY}\n"
-              f"@~/.agents/skills/project-memory/USE.md\n{instructions.MARK_END}\n")
+              f"@~/.agents/skills/project-memory/USE.md\n{instructions.MARK_LEGACY_END}\n")
     new, action = instructions.replace_block(legacy, instructions.fenced("@/new/AGENT.md"))
     assert action == "updated"
     assert "USE.md" not in new
     assert new.count(instructions.MARK_END) == 1
+    assert instructions.MARK_LEGACY_END not in new, "the retired product's marker survived"
     assert new.startswith("# My rules")
 
 
