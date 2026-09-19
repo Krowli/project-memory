@@ -171,7 +171,12 @@ jobs:
   github-release:
     name: publish the GitHub release
     needs: [verify, pypi, npm]
-    if: github.event_name == 'push'
+    # Runs when PyPI succeeded, even if npm did not. One registry refusing a token
+    # must not withhold the release notes and the artefacts from everyone else: the
+    # first 0.4.0 attempt published to PyPI, failed at npm, and left no GitHub
+    # release at all, so the version existed and nothing said what was in it. The run
+    # is still red, so nobody reads this as npm having worked.
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.pypi.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
