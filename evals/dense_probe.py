@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import math
 import resource
+import shutil
 import statistics
 import subprocess
 import sys
@@ -42,10 +43,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parent / "skills" / "project-memory" / "scripts"))
+sys.path.insert(0, str(HERE.parent / "src"))
 
-import memory_search  # noqa: E402
 import run as harness  # noqa: E402
+
+from pagelore import search as memory_search  # noqa: E402
 
 MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 RRF_K = 60
@@ -61,9 +63,22 @@ def rrf(*rankings: list[str], k: int = RRF_K) -> list[str]:
     return sorted(scored, key=lambda s: -scored[s])[:10]
 
 
+def shipped_search_argv(store: Path, *words: str) -> tuple[list[str], str]:
+    """The command a user actually types, not the one that is convenient to build.
+
+    The console script and `python -m pagelore` are different numbers — the script
+    is a generated stub that imports the package, `-m` walks `sys.path` for it — so
+    which one produced the figure has to be printed beside it."""
+    entry = shutil.which("lore") or shutil.which("pagelore")
+    if entry:
+        return [entry, "search", "--store", str(store), *words], f"{Path(entry).name} search"
+    return ([sys.executable, "-m", "pagelore", "search", "--store", str(store), *words],
+            "python -m pagelore search (no console script on PATH)")
+
+
 def cold_process(argv: list[str]) -> tuple[float, float]:
-    """Wall clock and peak RSS of one fresh process — what the skill pays per
-    search, since it is a script run afresh each time."""
+    """Wall clock and peak RSS of one fresh process — what a search costs, since
+    each one is a process run afresh."""
     before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
     t = time.perf_counter()
     subprocess.run(argv, capture_output=True, check=True)
@@ -129,9 +144,8 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         store = harness.materialise(corpus, Path(tmp))
-        search_script = Path(memory_search.__file__).resolve()
-        cold_search = cold_process([sys.executable, str(search_script), "--store", str(store),
-                                    "terminal", "freeze", "webgl"])
+        search_argv, search_label = shipped_search_argv(store, "terminal", "freeze", "webgl")
+        cold_search = cold_process(search_argv)
         cold_vector = cold_process([sys.executable, "-c", one_vector])
         results = {"dense": [], "hybrid": [], "shipped": []}
         by_type = {name: {} for name in results}
@@ -154,7 +168,8 @@ def main() -> int:
           f"per query {per_query_embed * 1000:.1f} ms")
     print(f"  cold process to one query vector {cold_vector[0] * 1000:.0f} ms, "
           f"peak RSS {cold_vector[1]:.0f} MB | cold shipped search "
-          f"{cold_search[0] * 1000:.0f} ms, peak RSS {cold_search[1]:.0f} MB\n")
+          f"{cold_search[0] * 1000:.0f} ms, peak RSS {cold_search[1]:.0f} MB"
+          f"  [{search_label}]\n")
 
     types = sorted(by_type["shipped"])
     head = f"{'method':10} {'nDCG@10':>8} {'vs shipped, paired':>26}" + \

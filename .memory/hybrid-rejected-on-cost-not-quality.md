@@ -8,7 +8,7 @@ supersedes:
   - bm25f-over-hybrid-retrieval
 sources:
   - evals/dense_probe.py
-  - skills/project-memory/references/retrieval.md
+  - docs/retrieval.md
 ---
 
 ## What changed

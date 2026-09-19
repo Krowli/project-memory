@@ -59,26 +59,200 @@ jobs:
       - run: pip install ruff
       - run: ruff check .
 
-  skill-spec:
-    name: Agent Skills spec validation
+  build:
+    name: build the distribution
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      # PyPI package `skills-ref` installs a console script named `agentskills`.
-      - run: pip install skills-ref
-      - run: agentskills validate skills/project-memory
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check --strict dist/*
 
-  plugin-manifest:
-    name: Claude Code manifest validation
+      # Until 0.4.0 `pyproject.toml` carried `py-modules = []` and the built
+      # distribution contained no program at all — LICENSE, README, pyproject and
+      # ten test files. Nobody noticed for months because nothing inspected the
+      # artefact. This step is that inspection.
+      - name: The wheel contains the program, the data, and nothing else
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          tops = {n.split("/")[0] for n in names}
+          expected = {"pagelore"} | {t for t in tops if t.endswith(".dist-info")}
+
+          missing = {"pagelore/cli.py", "pagelore/search.py", "pagelore/write.py",
+                     "pagelore/index.py", "pagelore/stats.py", "pagelore/lib.py",
+                     "pagelore/init.py", "pagelore/instructions.py",
+                     "pagelore/data/AGENT.md", "pagelore/data/page-template.md"} - set(names)
+          assert not missing, f"the wheel is missing {sorted(missing)}"
+          assert tops == expected, f"unexpected top-level entries: {sorted(tops - expected)}"
+          assert not [n for n in names if n.endswith((".pyc", ".pyo"))], "compiled bytecode shipped"
+          assert not [n for n in names if "__pycache__" in n], "__pycache__ shipped"
+          print(f"{len(names)} entries, all under {sorted(expected)}")
+          PY
+
+      - name: The sdist can build the wheel on its own
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fromsdist && tar -xzf dist/*.tar.gz -C /tmp/fromsdist --strip-components=1
+          cd /tmp/fromsdist && python -m build --wheel
+          python -c "import glob; print(glob.glob('dist/*.whl'))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  install-smoke:
+    name: install and use it (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      # pytest runs with `pythonpath = ["src"]` and therefore never touches the
+      # built artefact. This job is the only thing that does what a user does.
+      - name: Install the wheel as a user would
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip pipx
+          python -m pipx install --force dist/*.whl
+          python -m pipx ensurepath
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Write a page and find it again
+        run: |
+          set -euo pipefail
+          lore --version
+          work=$(mktemp -d) && cd "$work"
+          git init -q && mkdir -p src .memory && echo 'export {}' > src/a.ts
+          lore write --slug probe --title "Probe" --kind bug --source src/a.ts --body - <<'PMEOF'
+          ## Cause
+
+          Enough body to clear the floor the write gate applies, so the page is
+          actually written and the command after this one has something to find.
+          A shorter body is refused, which is the behaviour being relied on here.
+          PMEOF
+          lore search "probe floor" | tee /dev/stderr | grep -q probe
+          lore search --touching src/a.ts | grep -q "touches src/a.ts"
+          lore stats
+          lore doctor || true          # exits non-zero when nothing is connected, which is the case here
+
+      - name: A refused write says how to fix it, and exits non-zero
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d) && cd "$work" && mkdir -p .memory
+          if lore write --slug thin --title "Thin" --kind bug --body "too short" 2>err.txt; then
+            echo "::error::a page with no source and no body was accepted"; exit 1
+          fi
+          grep -q "FIX:" err.txt || { echo "::error::a refusal printed no FIX: line"; cat err.txt; exit 1; }
+
+      - name: Bare invocation exits 0, an unknown command exits 2
+        run: |
+          set -euo pipefail
+          lore > /dev/null   # an agent probing whether the tool exists must not read failure
+          if lore nonsense 2>/dev/null; then
+            echo "::error::an unknown command exited 0"; exit 1
+          fi
+
+  npm-pack:
+    name: the npm tarball carries the same program
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-      - run: npm install -g @anthropic-ai/claude-code
-      # --strict fails on unrecognized fields and missing metadata.
-      - run: claude plugin validate --strict .
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - run: node --check npm/bin/lore.js && node --check npm/scripts/vendor.js
+      - name: Pack
+        working-directory: npm
+        run: npm pack
+
+      # `vendor/` is generated and gitignored: one copy of this program is under
+      # version control and it is the one in `src/`. A stale vendored copy would be
+      # a version of the program whose source nobody can find, so the tarball's
+      # bytes are compared against the tree's.
+      - name: The vendored Python is byte-identical to src/
+        run: |
+          python - <<'PY'
+          import glob, hashlib, tarfile
+          from pathlib import Path
+
+          def digest(data): return hashlib.sha256(data).hexdigest()
+
+          tree = {str(p.relative_to("src")): digest(p.read_bytes())
+                  for p in sorted(Path("src/pagelore").rglob("*"))
+                  if p.is_file() and "__pycache__" not in p.parts}
+
+          packed = {}
+          with tarfile.open(glob.glob("npm/*.tgz")[0]) as tar:
+              for member in tar.getmembers():
+                  if not member.isfile() or "/vendor/" not in member.name:
+                      continue
+                  key = member.name.split("/vendor/", 1)[1]
+                  packed[key] = digest(tar.extractfile(member).read())
+
+          assert packed, "the tarball has no vendor/ at all"
+          only_tree = sorted(set(tree) - set(packed))
+          only_packed = sorted(set(packed) - set(tree))
+          differing = sorted(k for k in set(tree) & set(packed) if tree[k] != packed[k])
+          assert not only_tree, f"missing from the tarball: {only_tree}"
+          assert not only_packed, f"in the tarball but not in src/: {only_packed}"
+          assert not differing, f"different bytes: {differing}"
+          print(f"{len(packed)} files, identical")
+          PY
+
+      - name: Install it globally and use it
+        run: |
+          set -euo pipefail
+          npm install -g ./npm/pagelore-*.tgz
+          lore --version
+          work=$(mktemp -d) && cd "$work" && mkdir -p src .memory && echo 'export {}' > src/a.ts
+          lore write --slug probe --title "Probe" --kind bug --source src/a.ts --body - <<'PMEOF'
+          ## Cause
+
+          Enough body to clear the two-hundred-character floor the write gate
+          applies, so the page is written through the shim rather than refused, and
+          the search that follows has something real to find and rank.
+          PMEOF
+          lore search "probe floor" | grep -q probe
+
+      # The shim's whole reason to exist is finding an interpreter. An interpreter
+      # below the floor must be skipped silently and a named one that does not work
+      # must fail loudly — neither is visible from the Python side.
+      - name: A named interpreter that does not exist fails loudly
+        run: |
+          set -euo pipefail
+          if PROJECT_MEMORY_PYTHON=/nonexistent/python lore --version 2>err.txt; then
+            echo "::error::a broken PROJECT_MEMORY_PYTHON was silently ignored"; exit 1
+          fi
+          grep -q "so nothing else was tried" err.txt || { cat err.txt; exit 1; }
+
+      - name: An interpreter below the floor is skipped, not reported as broken
+        run: |
+          set -euo pipefail
+          printf '#!/bin/sh\nexit 69\n' > /tmp/too-old && chmod +x /tmp/too-old
+          if PROJECT_MEMORY_PYTHON=/tmp/too-old lore --version 2>err.txt; then
+            echo "::error::exit 69 was treated as success"; exit 1
+          fi
+          grep -q "older than Python" err.txt || { cat err.txt; exit 1; }

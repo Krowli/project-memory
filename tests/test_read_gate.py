@@ -1,6 +1,6 @@
 """The write gate, applied where it can be applied everywhere: on read.
 
-`memory_write.py` refuses a page too thin to be worth keeping. A page written
+`lore write` refuses a page too thin to be worth keeping. A page written
 around the script — by hand, by another tool, by an agent whose harness has no
 way to deny a Write — skipped that check, and a hook denying such writes exists
 on one harness only. So the check runs again in search, which runs on every
@@ -9,11 +9,12 @@ rewritten through the script; a page with no sources is shown but marked.
 """
 import json
 
-import memory_index
-import memory_lib
-import memory_search
-import memory_write
 import pytest
+
+from pagelore import index as memory_index
+from pagelore import lib as memory_lib
+from pagelore import search as memory_search
+from pagelore import write as memory_write
 
 LONG = ("The reap loop waits on the child before closing the master fd, so a child "
         "that ignores SIGTERM keeps the fd open and waitpid never returns. " * 3)
@@ -56,7 +57,7 @@ def test_the_skipped_page_is_named_so_it_can_be_rewritten(store, path, capsys):
     by_hand(store, "stub", STUB)
     memory_search.main(["waitpid", "--store", str(store)])
     err = capsys.readouterr().err
-    assert "stub" in err and str(memory_lib.MIN_BODY) in err and "memory_write.py" in err
+    assert "stub" in err and str(memory_lib.MIN_BODY) in err and "lore write" in err
 
     memory_search.main(["waitpid", "--store", str(store), "--json"])
     out = json.loads(capsys.readouterr().out)

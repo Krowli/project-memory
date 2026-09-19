@@ -5,7 +5,7 @@ kind: decision
 created: 2026-09-18
 updated: 2026-09-18
 sources:
-  - skills/project-memory/USE.md
+  - src/pagelore/data/AGENT.md
   - README.md
   - evals/acceptance.py
 ---

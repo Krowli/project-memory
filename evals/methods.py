@@ -7,19 +7,17 @@ shipped code, imported, so the number measured is the number users get.
 """
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 import sys
 from collections import Counter
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "project-memory" / "scripts"
-sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import os  # noqa: E402
-
-import memory_index  # noqa: E402
-import memory_search  # noqa: E402
+from pagelore import index as memory_index
+from pagelore import search as memory_search
 
 
 def shipped(query: str, corpus, store: Path) -> list[str]:

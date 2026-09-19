@@ -7,10 +7,11 @@ memory.
 """
 import json
 
-import memory_lib
-import memory_search
-import memory_write
 import pytest
+
+from pagelore import lib as memory_lib
+from pagelore import search as memory_search
+from pagelore import write as memory_write
 
 LONG = ("The reap loop waits on the child before closing the master fd, so a child "
         "that ignores SIGTERM keeps the fd open and waitpid never returns. " * 3)

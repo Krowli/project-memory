@@ -5,8 +5,8 @@ kind: decision
 created: 2026-08-17
 updated: 2026-08-17
 sources:
-  - skills/project-memory/scripts/memory_stats.py
-  - skills/project-memory/scripts/memory_lib.py
+  - src/pagelore/stats.py
+  - src/pagelore/lib.py
 ---
 
 ## Decision

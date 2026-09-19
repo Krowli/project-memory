@@ -5,8 +5,8 @@ kind: decision
 created: 2026-08-17
 updated: 2026-08-17
 sources:
-  - skills/project-memory/scripts/memory_search.py
-  - skills/project-memory/scripts/memory_write.py
+  - src/pagelore/search.py
+  - src/pagelore/write.py
 ---
 
 ## Context

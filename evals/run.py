@@ -57,8 +57,8 @@ def load_corpus() -> dict:
 
 def materialise(corpus: list[dict], directory: Path) -> Path:
     """Write the corpus out as a real store, through the real writer."""
-    sys.path.insert(0, str(HERE.parent / "skills" / "project-memory" / "scripts"))
-    import memory_write
+    sys.path.insert(0, str(HERE.parent / "src"))
+    from pagelore import write as memory_write
 
     store = directory / ".memory"
     store.mkdir(parents=True, exist_ok=True)
@@ -156,8 +156,8 @@ def calibration(corpus, store, known, unanswerable) -> dict:
     answerable ones. A score threshold — the obvious fix, and the one an audit
     recommended — costs recall and buys nothing.
     """
-    sys.path.insert(0, str(HERE.parent / "skills" / "project-memory" / "scripts"))
-    import memory_search
+    sys.path.insert(0, str(HERE.parent / "src"))
+    from pagelore import search as memory_search
 
     def top(query):
         hits = memory_search.search(query, store, k=1)

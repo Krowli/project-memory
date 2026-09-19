@@ -6,7 +6,7 @@ created: 2026-09-15
 updated: 2026-09-15
 sources:
   - evals/dense_probe.py
-  - skills/project-memory/references/retrieval.md
+  - docs/retrieval.md
 ---
 
 ## Context

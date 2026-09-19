@@ -1,4 +1,4 @@
-import memory_search
+from pagelore import search as memory_search
 
 
 def test_finds_page_by_body_term(populated):

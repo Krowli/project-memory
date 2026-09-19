@@ -1,26 +1,17 @@
-# project-memory
-
-> **This version is retired.** The program is a package now, and the command is
-> `lore`:
->
-> ```bash
-> pipx install pagelore          # or: npm install -g pagelore
-> lore init
-> ```
->
-> Your pages are safe: `.memory/` is unchanged and `lore search` finds every page.
-> `0.3.5` is the last release that installs as a copied skill directory, and it
-> stays installable. Everything below describes that older shape. See
-> [CHANGELOG.md](CHANGELOG.md) for the upgrade path — in particular, an `@path`
-> line pointing into the old skill directory fails silently once it is gone.
+# pagelore
 
 Durable project memory for coding agents: decisions, contracts and bug
 post-mortems as **markdown pages on disk**, searchable without a server.
 
-No server, no daemon, no API key, no hooks. The store is a `.memory/` directory
-of `.md` files — greppable, diffable, reviewable in a pull request, and readable
-by any agent or human. The runtime is Python 3.9+ standard library only — the
-version a stock macOS already ships — and the same scripts run under Claude
+```bash
+pipx install pagelore        # or: npm install -g pagelore
+lore init
+```
+
+The store is a `.memory/` directory of `.md` files — greppable, diffable,
+reviewable in a pull request, readable by any agent or human. No server, no
+daemon, no API key, no hooks. The runtime is the Python 3.9+ standard library,
+the version a stock macOS already ships, and the same command runs under Claude
 Code, Codex, Cursor, Gemini CLI, Kimi and anything else that can run a shell
 command.
 
@@ -30,6 +21,11 @@ itself, and if it cannot be used at all — no `sqlite3` in this Python, a
 read-only checkout, a sibling process rebuilding it — the pages are read and
 ranked directly instead. The markdown is always the source of truth.
 
+The package is `pagelore` and the command is `lore` because `project-memory` and
+`pm` were both already taken on PyPI and on npm, by unrelated products in the
+same niche. Versions up to 0.3.5 were installed as a copied skill directory; that
+is [gone](#upgrading-from-03x), and the release notes say what to do about it.
+
 ## Why
 
 Agents re-derive the same context every session and confidently restate
@@ -37,246 +33,143 @@ decisions that were reversed months ago. A memory store fixes that only if it is
 cheap to write, cheap to read, and survives switching tools. Plain markdown in
 git satisfies all three.
 
-## Install: once per machine, or once per project
+## Install
 
-Two separate things get placed, and they have different scopes:
-
-| | what it is | scope | where |
-|---|---|---|---|
-| **the skill** | code: the scripts and `SKILL.md` | **global** by default, once per machine; or local, committed with one repository | `~/.agents/skills/project-memory/` (global) or `<repo>/.agents/skills/project-memory/` (local) |
-| **the store** | your notes | **always per project** | `<repo>/.memory/` |
-
-The skill is one program and you install it once. The store is per project and
-you never install it: it appears in a project the first time an agent writes
-there, and is added to that project's `.gitignore` at that moment.
-
-### Global: through your agent's plugin system
-
-Each agent has its own plugin format, so this repository ships a manifest for
-each one. Use your agent's native command; every one of these installs for
-every project you will ever open.
-
-**Claude Code**
-```
-/plugin marketplace add Krowli/project-memory
-/plugin install project-memory@project-memory
-```
-
-**Codex CLI** — run `/plugins`, find `project-memory`, choose Install.
-
-**Cursor**
-```
-/add-plugin project-memory
-```
-
-**Gemini CLI**
-```bash
-gemini extensions install https://github.com/Krowli/project-memory
-```
-
-**Kimi Code**
-```
-/plugins install https://github.com/Krowli/project-memory
-```
-
-**Anything else** — one command, once:
-```bash
-curl -fsSL https://raw.githubusercontent.com/Krowli/project-memory/main/install.sh | bash
-```
-
-It installs the **latest released tag**, not the tip of `main`, so the version it
-prints means something and two people running it on the same day get the same
-code. `PROJECT_MEMORY_REF=main` takes the branch instead. It places the skill in
-`~/.agents/skills/`, which Codex and Cursor read natively, symlinks it into
-`~/.claude/skills/` for Claude Code, verifies the scripts run, and stops. It
-touches no agent's settings.
-
-Run from inside a repository on a terminal it asks two questions, and nothing
-else: where the skill goes, and which agents should use it.
-
-```
-Install the skill for every project, or only for this one?
-  1) every project on this machine — ~/.agents/skills  [default]
-  2) only /path/to/your/repo — .agents/skills, committed with the repo
-
-Which agents should use it?
-  1) Claude Code   ~/.claude/CLAUDE.md
-  2) Gemini CLI    ~/.gemini/GEMINI.md
-  3) Codex CLI     ~/.codex/AGENTS.md
-  4) none — show me what to add and I will do it myself  [default]
-```
-
-Pick an agent and it prints the exact file and the exact line before touching
-anything, and writes only after you confirm. What it writes is fenced by a
-marker comment, so a second install replaces that block instead of adding
-another copy, `--uninstall` takes it back out, and everything you wrote around
-it is left alone. Answer 4 and it prints the same line for you to add yourself.
-
-Piped through CI, or run from nowhere in particular, it asks nothing and takes
-the global install rather than stalling on a prompt nobody will answer.
-
-To update, run the same command again. To see whether that is worth doing:
+Either package manager installs the same program. Pick the one you already have.
 
 ```bash
-./install.sh --check      # installed: 0.2.2 / latest: v0.3.0 / update: available
+pipx install pagelore          # Python. `pip install --user pagelore` also works
+npm install -g pagelore        # Node. Vendors the Python; runs no pip, no postinstall
 ```
 
-Every script also answers `--version`.
-
-### Local: committed with one repository
+Then, once per machine:
 
 ```bash
-cd your-project
-curl -fsSL https://raw.githubusercontent.com/Krowli/project-memory/main/install.sh | bash -s -- --project
+lore init
 ```
 
-This puts the skill in `<repo>/.agents/skills/project-memory/` so it travels
-with the repository, and — because it is now standing in a project — asks where
-the store should live:
+`lore init` does three things, in this order, and nothing else:
 
-| mode | where | who can read it |
+1. Writes the instruction block to `~/.project-memory/AGENT.md`. This is the text
+   that makes an agent search before it answers, and it is the only part that is
+   not optional — [measured](#does-the-agent-use-it-unprompted), an agent with it
+   searches every time and an agent without it never does.
+2. Asks which agents should use it, and offers to add one line to that agent's own
+   instruction file. It prints the exact file and the exact line first, then asks.
+   **The default connects nothing** — writing into your global agent configuration
+   unasked is not a default anyone else gets to choose for you. If you decline it
+   prints the line so you can add it yourself.
+3. Inside a git repository, asks whether this project's pages should be private
+   (gitignored, the default) or tracked and reviewed in pull requests.
+
+With no terminal to answer on it asks nothing, writes only the block, prints the
+manual instructions and exits 0. Flags are the confirmation, so a scripted install
+works:
+
+```bash
+lore init --agent claude --store tracked --yes
+```
+
+To check what is connected, and to catch the three failures that produce no error
+on their own — an include pointing at a file that is gone, a pasted copy left
+behind by an older version, a leftover skill directory:
+
+```bash
+lore doctor
+```
+
+### The one line, per agent
+
+The line points at a file rather than carrying the text, because a transcription
+is a fork: the next release changes the block, every pasted copy stays as it was,
+and nothing anywhere says so. The file is refreshed by every `lore` invocation,
+which costs about 50 µs against a 50 ms search.
+
+| Agent | File | What goes in it |
 |---|---|---|
-| `gitignored` *(default)* | `.memory/` in the project, added to `.gitignore` | only this machine |
-| `tracked` | `.memory/` in the project, committed | anyone with repo access |
-| `home` | `~/.project-memory/<project>/`, symlinked as `.memory/` | only this machine, and it cannot be committed by accident |
+| Claude Code | `~/.claude/CLAUDE.md` | `@~/.project-memory/AGENT.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` | `@~/.project-memory/AGENT.md` |
+| Codex CLI | `~/.codex/AGENTS.md` | the block's text, pasted |
+| Cursor | Settings → Rules → User Rules | the block's text, pasted |
+| Anything else | whatever it reads every turn | either, if it expands `@path` |
 
-Pass `--store <mode>` to skip the question, or `--no-store` to install the skill
-and nothing else. With no terminal to ask on — a pipeline, CI, a container — it
-takes `gitignored` rather than guessing, because the mistake it prevents is
-one-way: notes pushed to a remote cannot be unpublished. Choose `tracked`
-deliberately, when you want the record reviewed in pull requests and shared
-with the team, and you are confident nothing sensitive will land in it.
+Claude Code expands `@path`, home-relative paths included, four hops deep, and
+loads a user-scope file's imports without an approval dialog. Gemini CLI takes the
+same syntax. Codex documents no import syntax and Cursor's User Rules is a text
+field, so those two get the text; the block carries a version stamp in an HTML
+comment, and `lore doctor` reports a pasted copy that has gone stale. Claude Code
+strips block-level comments before injection, so the stamp costs the agent nothing.
 
-At runtime the scripts resolve the store as `$PROJECT_MEMORY_DIR` if set,
-otherwise the nearest `.memory/` walking up from the working directory — so the
-`home` mode's symlink works with no extra configuration.
+A project can override the global answer: put the same line, or a narrower one, in
+that repository's own `CLAUDE.md` or `AGENTS.md`.
 
 ### Updating
 
-An update reaches you only when the version number changes, and how it reaches
-you depends on how you installed it.
-
-| installed with | how an update arrives |
-|---|---|
-| Claude Code plugin | in the background shortly after a session starts, **if auto-update is on for this marketplace** — it is off by default for third-party marketplaces like this one. Turn it on in `/plugin` → **Marketplaces** → *Enable auto-update*, or pull one by hand with `/plugin marketplace update project-memory`. When a plugin updates you are prompted to run `/reload-plugins` |
-| Gemini CLI | `gemini extensions update project-memory` |
-| Codex, Cursor, Kimi | that agent's own plugin update command |
-| `curl … install.sh` | nothing happens on its own. `./install.sh --check` prints what is installed and what is newest; re-running the install command updates in place |
-
 ```bash
-./install.sh --check      # installed: 0.3.0 / latest: v0.3.1 / update: available
+pipx upgrade pagelore          # or: npm update -g pagelore
 ```
 
-Nothing phones home and nothing checks for a new version behind your back: the
-skill makes no network calls at all, which is also why it needs no API key. The
-price of that is that an update is something you ask for.
-
-Two things follow an update on their own. The instruction block is included by
-path rather than copied, so it is always whatever the installed skill says — see
-below. And the store is yours: an update replaces code, never pages.
+The instruction block is refreshed by the next `lore` command you or your agent
+runs, so there is nothing to re-copy. A pasted copy is the exception, and is why
+`lore doctor` exists.
 
 ### Removing it
 
 ```bash
-./install.sh --uninstall
+lore uninstall                 # takes the block back out of every file it was added to
+pipx uninstall pagelore        # or: npm uninstall -g pagelore
 ```
 
-It removes the skill directory and the symlink the install made, prints each
-path it deleted, and stops. It does **not** touch three things, and says so:
+In that order. `pipx uninstall` cannot run our code, so it leaves the fenced block
+behind as an include pointing at a file nothing will ever recreate — and an agent
+that cannot load an `@path` does not error, it just stops searching. `lore
+uninstall` removes only the fenced block and leaves everything you wrote around
+it. **Your pages are never touched**, by this or by anything else; delete a
+`.memory/` directory yourself if you mean to.
 
-- **`.memory/` in your projects.** Those are your pages, not this program. Delete
-  a store yourself, one at a time, when you mean to: `rm -rf <project>/.memory`.
-- **A line you added to an agent's instruction file yourself.** The block the
-  installer wrote *is* removed, because it is fenced by its own markers; a line
-  you typed by hand is not, and comes out by hand.
-- **Any agent definition you wrote** that names the skill, such as
-  `~/.claude/agents/memory-keeper.md`.
+### Upgrading from 0.3.x
 
-A symlink is removed only when it resolves to the directory being deleted, so a
-link of yours pointing somewhere else is left alone.
+0.3.x installed a skill directory and wrote a line pointing into it. That
+directory is gone, so do this once, in this order:
 
-Installed as a plugin instead of by `install.sh`, use the agent's own command:
-`/plugin uninstall project-memory@project-memory` in Claude Code,
-`gemini extensions uninstall project-memory` in Gemini CLI.
+```bash
+sh install.sh --uninstall      # or re-run the curl one-liner; it now only uninstalls
+pipx install pagelore
+lore init
+```
 
-## Make it automatic: one line per agent
+`lore init` also recognises and replaces the old marker, so if you forget the
+first step you get one block rather than two. What it cannot fix is a plugin or
+extension install, which is separate:
 
-There are no hooks. Earlier versions carried three Claude Code hooks — announce
-the memory at session start, deny a hand-written page, remind a session that
-changed files and wrote nothing — and every one of them existed on one harness.
-A mechanism one agent has is not a mechanism, so the agent learns it has a
-memory the way it learns any skill exists: from the skill's `description`,
-which every harness that discovers skills shows the model at session start,
-and from the instruction file it reads on every turn.
-
-The description is in place as soon as the skill is installed. The instruction
-file is the one thing you do by hand, once. The block lives inside the skill at
-`skills/project-memory/USE.md`, so it travels with every install; where an agent
-can include a file by path, point at it rather than copying it, because a copy
-goes stale on the next release and nothing says so.
-
-| agent | file to edit | what to add |
-|---|---|---|
-| Claude Code | `~/.claude/CLAUDE.md` | `@~/.agents/skills/project-memory/USE.md` |
-| Gemini CLI | `~/.gemini/GEMINI.md` | `@~/.agents/skills/project-memory/USE.md` |
-| Codex CLI | `~/.codex/AGENTS.md` | the contents of `USE.md` — Codex documents no import syntax |
-| Cursor | Customize → Rules | the contents of `USE.md` — the field takes text, not a path |
-
-Claude Code expands `@path` imports, home-relative paths included, up to four
-hops deep, and loads them from a user-scope file without an approval dialog.
-Gemini CLI does the same with `@` in `GEMINI.md`. Adjust the path if you did not
-install to the default location: `--project` puts the skill in
-`.agents/skills/project-memory/`, and a clone of this repository has it at
-`skills/project-memory/`.
-
-**Where you put it decides who uses it**, which is the whole configuration
-surface:
-
-- one agent's or subagent's own description — only that agent searches and
-  writes, which is what you want for a researcher or an analyst role;
-- the project's `CLAUDE.md` or `AGENTS.md` — every agent working in that
-  project, including subagents an orchestrator spawns there;
-- the global file in the table — every agent in every project on the machine.
-
-The store itself is per project, `.memory/` at its root, and every agent working
-in that project shares it. One store for several projects is `--store home` or
-`$PROJECT_MEMORY_DIR`.
-
-This is how superpowers, the most widely installed skills library, runs on
-Codex, Devin and Grok — nothing injected, the skill index is the trigger — and
-it removed its own Codex hook because the native index worked better. The
-survey, by primary sources, is in `docs/research/superpowers-portability.md`.
-
-Whether an agent actually searches when nobody reminds it is the one thing this
-cannot guarantee, on any harness. `evals/acceptance.py` is the proof: a real
-session of the agent you name, a question only the store answers, and a check of
-the store's log for the search. See [Measured](#measured).
-
-**On Windows, mind the interpreter name.** `python3` is not a command Windows
-has: the installer puts `python`, `py` and `pymanager` on PATH. The snippet
-says `python3`; if that name does not resolve on your machine, replace it in
-the copy you paste. `install.sh --interpreter py` verifies the install with a
-particular interpreter. The scripts themselves are unaffected and the CI matrix
-covers Windows.
+```
+Claude Code   /plugin uninstall project-memory
+Gemini CLI    gemini extensions uninstall project-memory
+Codex, Cursor, Kimi   remove the directory you pointed them at
+```
 
 ## Usage
 
 Search before answering, write after meaningful work:
 
 ```bash
-memory_search.py "terminal freeze webgl context lost"     # ranked: slug — title — what matched — [score] updated
-memory_search.py --touching src/terminal/renderer.ts     # the pages about this file, first
-memory_write.py --slug webgl-context-loss \
+lore search "terminal freeze webgl context lost"     # ranked: slug — title — what matched — [score] updated
+lore search --touching src/terminal/renderer.ts      # the pages about this file, first
+lore write --slug webgl-context-loss \
   --title "xterm WebGL context loss on display sleep" \
   --kind bug --source src/terminal/renderer.ts --body - < page.md
-memory_stats.py --since 2026-09-01                        # what the store has been doing
+lore stats --since 2026-09-01                        # what the store has been doing
 ```
+
+A bare `lore` prints the command list and exits 0, because an agent checking
+whether the tool exists must not read a non-zero exit as a broken install. An
+unknown command prints a `FIX:` line naming the one you probably meant.
 
 `--touching PATH` puts the pages whose `sources` cite that file, or anything
 under that directory, ahead of every lexical hit, marked `▸ touches <path>`,
 with or without query words. A file matches only itself, never its siblings.
 
-Re-running `memory_write.py` with the same slug replaces same-header sections in
+Re-running `lore write` with the same slug replaces same-header sections in
 place and appends new ones, so repeated calls are safe and an amendment is cheap.
 It prints `replaced:` and `appended:` for every section it touched.
 
@@ -287,14 +180,18 @@ searchable, because what was rejected and why is often the useful part, but it
 stops outranking the page that replaced it. Recency is only a tie-break: equal
 scores prefer the more recently updated page.
 
+If you would rather grant an agent a narrow permission than arbitrary Python, the
+whole surface is one program: `Bash(lore:*)` in Claude Code, and the equivalent
+elsewhere.
+
 ### Writes are refused, not requested
 
 Asking an agent nicely, in a rules file, to keep a knowledge base tidy does not
 work — measured on a real corpus, it produced 104 auto-generated stubs whose
 bodies ran to about 139 characters (277 bytes on disk, frontmatter included), and
-they then occupied the top two result slots for real queries. So the
-check lives in the write path instead of in prose. `memory_write.py` exits
-non-zero and prints a `FIX:` line naming the next command when a page has:
+they then occupied the top two result slots for real queries. So the check lives
+in the write path instead of in prose. `lore write` exits non-zero and prints a
+`FIX:` line naming the next command when a page has:
 
 - no `--source`, or a `--source` path that does not exist on disk
 - a resulting page under 200 characters — measured against the page that will
@@ -307,12 +204,12 @@ non-zero and prints a `FIX:` line naming the next command when a page has:
 The correction then lands inside the agent's own tool loop, where it acts on it,
 rather than in a document it may never read.
 
-The same floor is applied on read. A page that arrived around the script — by
+The same floor is applied on read. A page that arrived around the command — by
 hand, from another tool, from an agent whose harness cannot refuse a Write — is
 skipped by search while it is under 200 characters, and named on stderr and in
-`--json` so it can be rewritten through the script; a page with no sources is
-shown, marked `⚠ no sources`. Search runs on every agent the skill is installed
-in, which is what makes it the place for the check.
+`--json` so it can be rewritten properly; a page with no sources is shown, marked
+`⚠ no sources`. Search runs on every agent, which is what makes it the place for
+the check.
 
 ### The store keeps a log, and something reads it
 
@@ -322,7 +219,7 @@ exported. The store carries its own `.gitignore` for that file, so it stays out
 of commits under every store mode — it holds every query anyone typed.
 
 ```bash
-memory_stats.py --since 2026-08-17
+lore stats --since 2026-08-17
 ```
 ```
 2026-08-17T18:31:03 … 2026-09-16T23:35:03
@@ -440,20 +337,42 @@ model cannot confabulate about; read the unanswerable row as an upper bound.
 
 ### Does the agent use it unprompted
 
-`evals/acceptance.py`, 2026-09-16, no hook anywhere, no pointer file in the
-project, one question only the store answers.
+This is the measurement the product lives on, because nothing here fires by
+itself: no hook, and since 0.4.0 no skill manifest for a harness to index either.
+The only thing that makes an agent search before it answers is the instruction
+block. `evals/acceptance.py` puts one question to a real session in a throwaway
+project whose store holds the answer, and reads the store's log afterwards. A run
+passes only if a search landed **before** the answer.
 
-| how the agent was told | searches before answering | outcome | time |
-|---|---|---|---|
-| Claude Code, skill registered, no instruction file | 2 | answer named the decision | 19 s |
-| Codex CLI 0.153, skill registered, user config and rules ignored | 1 | answer named the decision and followed the `superseded by` marker to the reversal | 24 s |
-| Claude Code, **no skill registered**, one `@path` line in the project's `CLAUDE.md` | 1 | answer named the decision and its reversal | 24 s |
+Fifteen sessions per arm, Claude Code 2.1.278, 2026-09-19, one question that never
+says "why":
 
-The third row is the one-line include on its own: nothing was registered with
-the harness, and the import alone carried the instruction far enough for the
-agent to search before answering. One run each, one question. Gemini, Cursor,
-Kimi, Copilot, OpenCode and Pi are unmeasured until someone runs the same
-command there.
+| how the agent learns the memory exists | searched before answering |
+|---|---|
+| the one `@path` line in `CLAUDE.md` | **15 / 15** |
+| nothing at all — no line, no manifest, no tools | **0 / 15** |
+| before 0.4.0: a registered skill directory, no instruction line | **15 / 15** |
+
+The second row is a control that cannot pass, which is what makes the first row
+mean anything. It is also the honest floor: install this and connect nothing, and
+you have installed nothing. `lore doctor` therefore calls "installed but not
+connected" a fault rather than a neutral state.
+
+The third row is the one this repackage has to answer for, and it does not say
+what was hoped. Up to 0.3.5 the program shipped as a skill directory a harness
+could index, and that description alone made the agent search 15 times out of 15
+with no instruction line anywhere. So dropping the packaging removed a fallback
+that worked, for the specific user who installs and then connects nothing. The
+recommended setup is 15/15 either way, which is why the trade was taken; what
+pays for it is that `lore init` runs at install time and offers the line, `lore
+doctor` calls an unconnected install a fault rather than a neutral state, and a
+bare `lore` says so in one line. None of those existed when the skill directory
+was doing the work.
+
+One earlier single run covers a harness the 15-run arms do not: Codex CLI 0.153,
+the block pasted into its rules, searched once and its answer followed the
+`superseded by` marker to the reversal. Gemini, Cursor, Kimi, Copilot, OpenCode and
+Pi are unmeasured until someone runs the same command there.
 
 ### MCP, measured and refused
 
@@ -483,84 +402,140 @@ against one copied directory, a process per session, and context for a tool
 list, and it buys nothing measurable. The probe stays in `evals/` so the
 question can be re-run rather than re-argued.
 
+
 ### Speed, and the cost of the gate
 
-End to end, as a shell invocation: 90 pages 235 ms reading every page against
-99 ms with the warm index; 1 000 pages 1 887 against 174 ms; 5 000 pages
-4 637 against 196 ms. A warm search is nearly flat in corpus size.
+One search, end to end, as the command a user types: a fresh process, interpreter
+startup included. `python3 evals/speed.py` produces this table, and `--pages`
+changes the sizes. The corpus is the committed 90 pages grown by suffixing slugs.
 
-The write gate was tuned to a real population: 104 of 495 pages in the corpus
-it was designed against were stubs averaging 139 characters, and they took the
-top two result slots. Before the per-page lock, concurrent writers on one slug
-— ordinary with subagent fan-out — lost up to 16 of 20 sections while every
-command exited 0.
+| pages | warm, with the index | index refused | ratio |
+|---|---|---|---|
+| 90 | 52 ms | 76 ms | 1.5× |
+| 1 000 | 69 ms | 341 ms | 4.9× |
+| 5 000 | 139 ms | 1 507 ms | 10.8× |
+
+The second column is not a hypothetical: it is what happens on a read-only
+checkout, on a Python without `sqlite3`, and while a sibling process rebuilds the
+index. That it stays usable to 1 000 pages is why the index is allowed to be a
+disposable cache rather than the store.
+
+Cold start by install route, same query, 90 pages:
+
+| route | median |
+|---|---|
+| `lore`, installed by pipx | 52 ms |
+| `python -m pagelore` | 52 ms |
+| `lore`, installed by npm | 87 ms |
+
+The npm route pays for a Node process that then spawns Python. It spawns the first
+candidate interpreter with the real arguments rather than probing with a throwaway
+`--version` first, because that probe would have added a second round trip to
+every search.
+
+Figures published before 0.4.0 came from an uncommitted script and are superseded,
+not comparable: the measurement is in the repository now, which is the point.
+
+The write gate was tuned to a real population: 104 of 495 pages in the corpus it
+was designed against were stubs averaging 139 characters, and they took the top
+two result slots. Before the per-page lock, concurrent writers on one slug —
+ordinary with subagent fan-out — lost up to 16 of 20 sections while every command
+exited 0.
 
 ### Reproduce
 
 ```bash
 python3 evals/run.py --by-type                 # retrieval, touching, ambiguous, unanswerable, calibration
+python3 evals/speed.py                         # the table above
 python3 evals/dense_probe.py                   # needs fastembed; --static MODEL needs model2vec
 python3 evals/compare_basic_memory.py          # needs basic-memory
-python3 evals/acceptance.py --agent '...'      # a real agent session; see the file for commands
-python3 evals/acceptance.py --pointer mcp ...  # the same session reaching the store over MCP
-pytest                                         # 209 tests, both retrieval paths in CI
+python3 evals/acceptance.py --pointer include --agent '...'   # a real agent session
+python3 evals/acceptance.py --pointer mcp --agent '...'       # the same session over MCP
+pytest                                         # both retrieval paths, in CI on three operating systems
 ```
 
+`evals/acceptance.py` needs `lore` on PATH and refuses to run without it: an agent
+that tries to search and cannot would score the same as one that never tried.
+
 Every decision these numbers bought is also a page in this repository's own
-`.memory/`, dated and sourced, including the two that refused something.
+`.memory/`, dated and sourced, including the ones that refused something.
 
 ## Layout
 
 ```
-skills/project-memory/     the skill itself — this is what gets installed
-  SKILL.md                 instructions the agent loads
-  scripts/                 memory_search.py, memory_write.py, memory_index.py,
-                           memory_stats.py, memory_lib.py
-  references/              detail loaded on demand, not at startup
-  assets/                  page template
-evals/                     reproducible retrieval measurement: corpus, queries, scorer;
-                           acceptance.py runs a real agent session against the store
-docs/research/             primary-source notes behind decisions
+src/pagelore/              the program
+  cli.py                   the dispatcher: one prefix router, not argparse subcommands
+  search.py index.py       ranking, and the FTS5 index that is a cache
+  write.py lib.py stats.py the write gate, the store, the log reader
+  init.py doctor.py        the wizard, and the detector for what has gone silently wrong
+  instructions.py          renders and refreshes the block an agent reads every turn
+  data/AGENT.md            that block — the measured 15/15 text
+npm/                       the Node route: a shim, plus src/pagelore vendored at pack time
+docs/                      page format, retrieval detail, and primary-source research notes
+evals/                     reproducible measurement: corpus, queries, scorer, speed,
+                           an MCP probe, and a real-agent acceptance run
 tests/                     pytest suite, stdlib only
+tools/                     one-shot maintenance scripts
 .memory/                   this project's own pages, tracked on purpose
-.claude-plugin/            plugin.json + marketplace.json
+install.sh                 retired; it now only prints the new commands and uninstalls 0.3.x
 ```
 
 ## Compatibility
 
-| Agent | Mechanism | Verified |
-|---|---|---|
-| Claude Code | plugin marketplace, or `~/.claude/skills/` | yes, acceptance run |
-| Codex | `~/.agents/skills/`, `$REPO_ROOT/.agents/skills` | yes, acceptance run |
-| Cursor | `.agents/skills/`, `~/.agents/skills/` | per vendor docs |
-| Gemini CLI | extension with `GEMINI.md` as its context file | per vendor docs |
-| Kimi Code | plugin with `sessionStart.skill` | per vendor docs |
-| Anything else | scripts + the `AGENTS.md` snippet | n/a |
+One installed command, so there is no per-agent mechanism left to get wrong — only
+the line that tells the agent about it.
 
-`SKILL.md` frontmatter is restricted to the six fields in the
-[Agent Skills spec](https://agentskills.io/specification) (`name`,
-`description`, `license`, `compatibility`, `metadata`, `allowed-tools`), so the
-same file loads in Claude Code and uploads to claude.ai unchanged. A CI test
-enforces that restriction. The Claude Code path is checked in CI on every push
-to `main`: `claude plugin validate --strict` for the manifests and the Agent
-Skills spec validator for `SKILL.md`. The Python is tested on Ubuntu, macOS and
-Windows against Python 3.11 and 3.13, and against 3.9 on Linux and Intel macOS, on both retrieval paths.
+| Agent | How it learns the memory exists | Verified |
+|---|---|---|
+| Claude Code | `@~/.project-memory/AGENT.md` in `CLAUDE.md` | yes, 15 of 15 acceptance sessions |
+| Codex CLI | the block pasted into `~/.codex/AGENTS.md` | yes, acceptance run on 0.153 |
+| Gemini CLI | `@~/.project-memory/AGENT.md` in `GEMINI.md` | per vendor docs |
+| Cursor | the block pasted into User Rules | per vendor docs |
+| Anything else | either, in whatever it reads every turn | n/a |
+
+Python 3.9 or newer, which is what a stock macOS ships. The floor is declared in
+one place and checked everywhere it matters: `requires-python` stops `pip`, an
+exit-69 check in `__main__.py` stops the npm route, which has no package metadata
+to refuse anything, and a test asserts that CI actually runs a row on it. Tested
+on Ubuntu, macOS and Windows against 3.11 and 3.13, and on 3.9 on Linux and Intel
+macOS, on both retrieval paths.
+
+CI also opens the built wheel and asserts the program is inside it. That test
+exists because for months it was not: `pyproject.toml` declared `py-modules = []`
+and every published distribution contained LICENSE, README, pyproject and ten test
+files. Nothing looked, so nobody knew.
 
 ## Contributing
 
-`pytest` must be green and `ruff check .` clean. The version is carried in nine
-places and a test fails if any of them drift: `.claude-plugin/plugin.json`,
-`.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`,
-`.cursor-plugin/plugin.json`, `.kimi-plugin/plugin.json`,
-`gemini-extension.json`, `pyproject.toml`, `SKILL.md`'s `metadata.version` and
-`memory_lib.VERSION`. Bump them together, add a `CHANGELOG.md` entry, then tag:
-
 ```bash
-git tag -a v0.3.0 -m "project-memory 0.3.0" && git push origin main v0.3.0
+git clone https://github.com/Krowli/project-memory && cd project-memory
+pip install -e ".[dev]"
+pytest && PROJECT_MEMORY_NO_FTS5=1 pytest && ruff check .
 ```
 
-The tag triggers the release workflow, which checks the tag against the
-manifests and publishes the changelog section as the GitHub release.
+Both pytest runs have to pass. The second covers the scan ranker that answers when
+SQLite has no FTS5, which every machine in CI does have, so without it that path
+rots undetected.
+
+**No proposal lands without a number from `evals/` or a failing test it fixes.**
+That rule is why two features that measurably improve retrieval are refused in
+this README rather than shipped, and it applies to the maintainer too.
+
+The version is one literal in `src/pagelore/__init__.py`. `npm/package.json`
+carries the only copy, because npm cannot read a Python file, and both the packer
+and a test refuse a mismatch. To release: bump that literal and the npm one, add a
+`CHANGELOG.md` section, then tag.
+
+```bash
+git tag -a v0.4.0 -m "pagelore 0.4.0" && git push origin main v0.4.0
+```
+
+The tag triggers the release workflow: it checks the tag against the code and the
+changelog, opens the wheel, publishes to PyPI through trusted publishing, then to
+npm, then cuts the GitHub release with that changelog section as the notes. PyPI
+goes first because a PyPI version can never be replaced and an npm one can.
+Rehearse the whole path against TestPyPI with a `workflow_dispatch` run first — a
+failed publish burns a version number.
 
 ## License
 

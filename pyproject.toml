@@ -1,25 +1,71 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
 [project]
-name = "project-memory"
-version = "0.3.5"
-description = "Durable project memory as markdown pages on disk, for coding agents"
+name = "pagelore"
+dynamic = ["version"]
+description = "Durable project memory as markdown pages on disk, searchable without a server"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.9"
+authors = [{ name = "Yehven Shcherbynskyi", email = "lionmause999@gmail.com" }]
+keywords = [
+  "memory", "retrieval", "bm25", "knowledge-base", "context",
+  "agents", "llm", "claude-code", "codex",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Documentation",
+  "Topic :: Text Processing :: Indexing",
+]
 dependencies = []          # runtime is stdlib-only, on purpose
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
-# Nothing here is importable as a package: the scripts are run by path, and the
-# tests reach them through `pythonpath` below. Declaring that explicitly stops
-# setuptools auto-discovery, which otherwise sees evals/, skills/ and tests/ as
-# competing top-level packages and refuses to build the project at all.
-[tool.setuptools]
-py-modules = []
+[project.urls]
+Homepage = "https://github.com/Krowli/project-memory"
+Repository = "https://github.com/Krowli/project-memory"
+Changelog = "https://github.com/Krowli/project-memory/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Krowli/project-memory/issues"
 
+# Two names for one program. `lore` is the documented one; `pagelore` is the escape
+# hatch for a machine where something else already owns three letters in the most
+# contested namespace a developer has. Every message reflects whichever ran.
+[project.scripts]
+lore = "pagelore.cli:main"
+pagelore = "pagelore.cli:main"
+
+# The version is read out of the source, not written here. A literal in this file
+# would be a second truth, and this project already learned what ten of those cost.
+[tool.hatch.version]
+path = "src/pagelore/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pagelore"]
+
+# The sdist is something a person can `pip install` and then `pytest`. It carries
+# the program, the suite, and the two root files the suite reads. Not evals/ (a
+# third of a megabyte of fixtures useless without fastembed), not docs/, not the
+# store.
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/README.md", "/LICENSE", "/CHANGELOG.md", "/AGENTS.md"]
+
+# `src/` layout, and it is load-bearing rather than stylistic. The previous flat
+# layout made setuptools see evals/, skills/ and tests/ as competing top-level
+# packages; that was silenced with `py-modules = []`, which declared the project
+# had no code — and so the built distribution never contained the program, for the
+# whole life of the project. A layout cannot regress the way an exclude list can.
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["skills/project-memory/scripts"]
+pythonpath = ["src"]
 addopts = "-q"
 
 [tool.ruff]

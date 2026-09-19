@@ -8,8 +8,9 @@ Motivation is measured, not aesthetic: in the corpus this was designed against,
 the top two result slots for real queries. A page nobody can trace to a file,
 or one too thin to say anything the source does not, costs more than it returns.
 """
-import memory_write
 import pytest
+
+from pagelore import write as memory_write
 
 LONG = ("The reap loop waits on the child before closing the master fd, so a child "
         "that ignores SIGTERM keeps the fd open and waitpid never returns. " * 3)
@@ -95,7 +96,7 @@ def test_a_missing_kind_is_countable_apart_from_a_wrong_one(repo):
     problems whose fixes point in opposite directions."""
     import json
 
-    import memory_lib
+    from pagelore import lib as memory_lib
     run(repo, "--slug", "a", "--title", "T", "--source", "src/real.ts")
     run(repo, "--slug", "b", "--title", "T", "--kind", "rationale", "--source", "src/real.ts")
     codes = [json.loads(line)["code"]
@@ -109,10 +110,10 @@ def test_the_documented_kinds_are_exactly_the_accepted_ones(repo):
     """`references/page-format.md` and the shipped page template both advertised
     `kind: note`, which the gate rejects, and neither mentioned `howto`."""
     from pathlib import Path
-    reference = (Path(__file__).resolve().parents[1] / "skills" / "project-memory"
-                 / "references" / "page-format.md").read_text(encoding="utf-8")
-    template = (Path(__file__).resolve().parents[1] / "skills" / "project-memory"
-                / "assets" / "page-template.md").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    reference = (root / "docs" / "page-format.md").read_text(encoding="utf-8")
+    template = (root / "src" / "pagelore" / "data"
+                / "page-template.md").read_text(encoding="utf-8")
     for kind in memory_write.KINDS:
         assert f"`{kind}`" in reference, f"{kind} is accepted but not documented"
     assert "note" not in reference.replace("Notes", "").replace("note that", "")

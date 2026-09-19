@@ -25,11 +25,11 @@ from io import StringIO
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "skills" / "project-memory" / "scripts"))
+sys.path.insert(0, str(HERE.parent / "src"))
 
-import memory_search  # noqa: E402
-import memory_write  # noqa: E402
-from memory_lib import find_store  # noqa: E402
+from pagelore import search as memory_search  # noqa: E402
+from pagelore import write as memory_write  # noqa: E402
+from pagelore.lib import find_store  # noqa: E402
 
 PROTOCOL = "2025-06-18"
 

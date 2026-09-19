@@ -13,7 +13,7 @@ same shape a summariser produces — on topic, correctly titled, and empty of
 anything the source does not already say — and re-run the identical queries. The
 difference is the cost of not having a gate. Nothing else changes.
 
-Every stub here would be refused by `memory_write.py`: they are under the
+Every stub here would be refused by `lore write`: they are under the
 200-character floor and they cite no source. That is the point — this is the
 population the gate exists to exclude, and this is what it buys.
 """
@@ -27,10 +27,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parent / "skills" / "project-memory" / "scripts"))
+sys.path.insert(0, str(HERE.parent / "src"))
 
-import memory_search  # noqa: E402
 import run as harness  # noqa: E402
+
+from pagelore import search as memory_search  # noqa: E402
 
 # 104 of 495 in the corpus that motivated the gate.
 STUB_RATIO = 104 / 495
@@ -137,7 +138,7 @@ def main() -> int:
 
     sweep(pages, queries, clean)
 
-    print("\n  every stub above is refused by memory_write.py: no source, and a body "
+    print("\n  every stub above is refused by `lore write`: no source, and a body "
           "under 200 characters.")
     if "--json" in sys.argv:
         print(json.dumps({"clean": clean["ndcg@10"], "polluted": polluted["ndcg@10"],

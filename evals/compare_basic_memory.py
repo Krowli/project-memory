@@ -28,10 +28,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parent / "skills" / "project-memory" / "scripts"))
+sys.path.insert(0, str(HERE.parent / "src"))
 
-import memory_search  # noqa: E402
 import run as harness  # noqa: E402
+
+from pagelore import search as memory_search  # noqa: E402
 
 BM = os.environ.get("BM", "basic-memory")
 WORKERS = 8

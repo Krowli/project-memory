@@ -12,13 +12,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import conftest
-import memory_index
-import memory_search
-import memory_write
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "project-memory" / "scripts"
-SEARCH = SCRIPTS / "memory_search.py"
+from pagelore import index as memory_index
+from pagelore import search as memory_search
+from pagelore import write as memory_write
+
+SRC = Path(__file__).resolve().parents[1] / "src" / "pagelore"
+SEARCH = [*conftest.LORE, "search"]
 
 LONG = ("The reap loop waits on the child before closing the master fd, so a child "
         "that ignores SIGTERM keeps the fd open and waitpid never returns. " * 3)
@@ -72,7 +73,7 @@ def test_the_index_is_not_written_into_the_store(stocked):
 
 
 def test_a_symlinked_store_and_its_target_share_one_index(tmp_path):
-    """`install.sh --store home` puts the pages in ~/.project-memory/<project> and
+    """`lore init --store home` puts the pages in ~/.project-memory/<project> and
     symlinks .memory at it. Keying on the unresolved path would index twice."""
     real = tmp_path / "real-store"
     real.mkdir()
@@ -243,12 +244,12 @@ def test_a_hostile_entry_is_neither_indexed_nor_a_permanent_rebuild(stocked):
     assert "env-notes.md" not in fingerprint
 
 
-@pytest.mark.parametrize("name", ["memory_lib.py", "memory_search.py", "memory_write.py",
-                                  "memory_stats.py", "memory_index.py"])
+@pytest.mark.parametrize("name", ["lib.py", "search.py", "write.py",
+                                  "stats.py", "index.py"])
 def test_sqlite3_is_never_imported_at_module_scope(name):
     """Debian's python3-minimal ships no sqlite3 module at all, so a top-level
     import turns a working search into a traceback on every session-start hook."""
-    for line in (SCRIPTS / name).read_text(encoding="utf-8").splitlines():
+    for line in (SRC / name).read_text(encoding="utf-8").splitlines():
         assert not line.startswith("import sqlite3"), f"{name}: {line}"
         assert not line.startswith("from sqlite3"), f"{name}: {line}"
 

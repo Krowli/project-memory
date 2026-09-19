@@ -1,5 +1,5 @@
 """Older pages write `sources: [a, b]` inline; newer ones use a block list."""
-import memory_lib
+from pagelore import lib as memory_lib
 
 
 def _write(store, text):

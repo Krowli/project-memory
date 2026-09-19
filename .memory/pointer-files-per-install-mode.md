@@ -3,7 +3,9 @@ slug: pointer-files-per-install-mode
 title: "The repo's own contract named a script path that did not exist"
 kind: bug
 created: 2026-08-17
-updated: 2026-08-17
+updated: 2026-09-19
+status: superseded
+superseded_by: installed-command-not-copied-directory
 sources:
   - CLAUDE.md
   - AGENTS.md
