@@ -1,6 +1,6 @@
 {
   "name": "project-memory",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Durable project memory as markdown pages on disk, searchable without a server. Records decisions, contracts and bugs; retrieves them before the agent answers from guesswork.",
   "author": {
     "name": "Yehven Shcherbynskyi",

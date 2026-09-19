@@ -6,6 +6,29 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-09-19
+
+### Added
+
+- **The install asks which agents should use it, and writes the line itself.**
+  Printing instructions and leaving the user to carry them out was the step
+  people finished the install without taking. It now lists Claude Code, Gemini
+  and Codex with the file each one reads, shows the exact path and the exact
+  line before touching anything, and writes only after a confirmation. What it
+  writes is fenced by marker comments: a second install replaces that block
+  rather than stacking another copy, `--uninstall` takes it back out, and
+  everything the user wrote around it survives. Declining prints the line to
+  add by hand, which is what it used to do unconditionally.
+
+### Fixed
+
+- **The "install here or everywhere" question could not change anything.** It
+  ran after the destination had already been worked out, so both answers led to
+  the same directory. It now runs before, and a pty-driven test asserts that
+  answering "only this one" puts the skill in the repository and not in the
+  home directory — the questions are interactive, so a test that pipes stdin
+  proves nothing about them.
+
 ## [0.3.3] - 2026-09-19
 
 ### Added
@@ -378,7 +401,8 @@ they found, all of it now covered by a test that fails when the fix is removed:
 - Claude Code plugin and marketplace manifests.
 - Test suite covering search, writing, frontmatter tolerance and manifests.
 
-[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/Krowli/project-memory/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/Krowli/project-memory/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Krowli/project-memory/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Krowli/project-memory/compare/v0.3.0...v0.3.1

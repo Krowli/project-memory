@@ -77,11 +77,29 @@ code. `PROJECT_MEMORY_REF=main` takes the branch instead. It places the skill in
 `~/.claude/skills/` for Claude Code, verifies the scripts run, and stops. It
 touches no agent's settings.
 
-Run from inside a repository on a terminal, it asks first whether to install for
-every project or only for that one. Piped through CI, or run from nowhere in
-particular, it takes the global install without stalling on a prompt nobody will
-answer. It ends by printing the one line you still have to add yourself, with the
-path filled in for the install it just did, and the command that undoes it.
+Run from inside a repository on a terminal it asks two questions, and nothing
+else: where the skill goes, and which agents should use it.
+
+```
+Install the skill for every project, or only for this one?
+  1) every project on this machine — ~/.agents/skills  [default]
+  2) only /path/to/your/repo — .agents/skills, committed with the repo
+
+Which agents should use it?
+  1) Claude Code   ~/.claude/CLAUDE.md
+  2) Gemini CLI    ~/.gemini/GEMINI.md
+  3) Codex CLI     ~/.codex/AGENTS.md
+  4) none — show me what to add and I will do it myself  [default]
+```
+
+Pick an agent and it prints the exact file and the exact line before touching
+anything, and writes only after you confirm. What it writes is fenced by a
+marker comment, so a second install replaces that block instead of adding
+another copy, `--uninstall` takes it back out, and everything you wrote around
+it is left alone. Answer 4 and it prints the same line for you to add yourself.
+
+Piped through CI, or run from nowhere in particular, it asks nothing and takes
+the global install rather than stalling on a prompt nobody will answer.
 
 To update, run the same command again. To see whether that is worth doing:
 
@@ -154,8 +172,9 @@ path it deleted, and stops. It does **not** touch three things, and says so:
 
 - **`.memory/` in your projects.** Those are your pages, not this program. Delete
   a store yourself, one at a time, when you mean to: `rm -rf <project>/.memory`.
-- **The line you added to your agent's instruction file.** Remove
-  `@~/.agents/skills/project-memory/USE.md` from `~/.claude/CLAUDE.md` by hand.
+- **A line you added to an agent's instruction file yourself.** The block the
+  installer wrote *is* removed, because it is fenced by its own markers; a line
+  you typed by hand is not, and comes out by hand.
 - **Any agent definition you wrote** that names the skill, such as
   `~/.claude/agents/memory-keeper.md`.
 

@@ -214,3 +214,105 @@ def test_the_scope_question_is_skipped_when_there_is_no_terminal(tmp_path):
     assert out.returncode == 0, out.stderr
     assert "Choice [1]" not in out.stdout
     assert (dest / "project-memory").is_dir()
+
+
+# The installer's questions only exist when there is a terminal to answer on, so
+# a test that pipes stdin proves nothing about them. These drive a real pty.
+def _answer(argv, answers, env, cwd, timeout=180):
+    """Run a command in a pty, answering each prompt in turn. Returns the output."""
+    import pty
+    import select
+    import time
+
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(cwd)
+        os.environ.update(env)
+        os.execvp(argv[0], argv)
+    out, sent, deadline = b"", 0, time.time() + timeout
+    prompt = re.compile(r"(Choice[^\n]*:|\[Y/n\]:)\s*$")
+    while time.time() < deadline:
+        ready, _, _ = select.select([fd], [], [], 1.0)
+        if not ready:
+            if sent >= len(answers):
+                break
+            continue
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+        if sent < len(answers) and prompt.search(out.decode("utf-8", "replace")):
+            os.write(fd, (answers[sent] + "\n").encode())
+            sent += 1
+            out += b"\x00"  # so the same prompt is not answered twice
+    os.close(fd)
+    return out.decode("utf-8", "replace")
+
+
+def _install_env(home):
+    branch = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"],
+                            capture_output=True, text=True).stdout.strip()
+    return {"HOME": str(home), "PROJECT_MEMORY_REPO": str(REPO),
+            "PROJECT_MEMORY_REF": branch if branch and branch != "HEAD" else "main"}
+
+
+@conftest.needs_posix
+def test_it_asks_where_to_install_and_the_answer_decides_where_it_goes(tmp_path):
+    """The question has to come before the destination is worked out. The first
+    version of it ran after, where every answer led to the same directory and
+    the prompt was decoration."""
+    home = tmp_path / "home"
+    home.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    out = _answer(["bash", str(INSTALL), "--no-store"], ["2", "4"],
+                  _install_env(home), str(tmp_path))
+    assert "every project on this machine" in out
+    assert (tmp_path / ".agents" / "skills" / "project-memory").is_dir(), out[-2000:]
+    assert not (home / ".agents" / "skills" / "project-memory").exists()
+
+
+@conftest.needs_posix
+def test_it_offers_to_connect_an_agent_and_writes_only_what_was_confirmed(tmp_path):
+    """Installing the files is half of it; the agent reaches for them once the
+    block is in the file it reads. Doing that by hand was the step people
+    finished the install without taking."""
+    home = tmp_path / "home"
+    claude_md = home / ".claude" / "CLAUDE.md"
+    claude_md.parent.mkdir(parents=True)
+    claude_md.write_text("# My rules\n\nDo not break things.\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+
+    out = _answer(["bash", str(INSTALL), "--no-store"], ["1", "1", "y"],
+                  _install_env(home), str(tmp_path))
+
+    use = home / ".agents" / "skills" / "project-memory" / "USE.md"
+    assert "This will change:" in out, out[-2000:]
+    assert str(claude_md) in out, "it does not show which file it is about to change"
+    assert f"@{use}" in out, "it does not show the line it is about to add"
+
+    written = claude_md.read_text(encoding="utf-8")
+    assert written.startswith("# My rules\n\nDo not break things.\n"), "it ate the user's text"
+    assert f"@{use}" in written
+    assert "project-memory: installed by install.sh" in written
+
+    # Removal takes out its own block and leaves everything around it.
+    subprocess.run(["bash", str(INSTALL), "--uninstall"], capture_output=True, text=True,
+                   env={**os.environ, **_install_env(home)}, cwd=str(tmp_path), check=True)
+    after = claude_md.read_text(encoding="utf-8")
+    assert after.strip() == "# My rules\n\nDo not break things.".strip()
+    assert not use.exists()
+
+
+@conftest.needs_posix
+def test_declining_the_offer_writes_nothing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    out = _answer(["bash", str(INSTALL), "--no-store"], ["1", "1", "n"],
+                  _install_env(home), str(tmp_path))
+    assert "nothing written" in out
+    assert not (home / ".claude" / "CLAUDE.md").exists()
+    assert "To connect it yourself" in out, "declining leaves the user with no instructions"

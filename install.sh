@@ -37,17 +37,27 @@ REPO="${PROJECT_MEMORY_REPO:-https://github.com/Krowli/project-memory}"
 REF="${PROJECT_MEMORY_REF:-}"
 NAME="project-memory"
 DEST=""
+DEST_GIVEN=0
 SCOPE="user"
 STORE_MODE="${PROJECT_MEMORY_STORE:-}"
 NO_STORE=0
 CHECK=0
 UNINSTALL=0
+
+# Fences around the block the installer writes into an agent's instruction file,
+# so a second install replaces its own block instead of stacking another copy
+# and `--uninstall` can take out exactly what was added and nothing beside it.
+MARK_BEGIN="<!-- project-memory: installed by install.sh — delete to this file's matching end marker to disconnect -->"
+MARK_END="<!-- project-memory: end -->"
+# The instruction files the installer offers to write, in the order it lists
+# them. Removal checks the same three, whichever were chosen at install time.
+AGENT_FILES="$HOME/.claude/CLAUDE.md $HOME/.gemini/GEMINI.md $HOME/.codex/AGENTS.md"
 PYTHON="${PROJECT_MEMORY_PYTHON:-}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)  SCOPE="project"; shift ;;
-    --dest)     DEST="${2:?--dest needs a path}"; shift 2 ;;
+    --dest)     DEST="${2:?--dest needs a path}"; DEST_GIVEN=1; shift 2 ;;
     --store)    STORE_MODE="${2:?--store needs gitignored|tracked|home}"; shift 2 ;;
     --no-store) NO_STORE=1; shift ;;
     --check)    CHECK=1; shift ;;
@@ -62,6 +72,32 @@ case "${STORE_MODE:-}" in
   ""|gitignored|tracked|home) ;;
   *) echo "--store must be gitignored, tracked or home (got: $STORE_MODE)" >&2; exit 2 ;;
 esac
+
+# ── scope ────────────────────────────────────────────────────────────────────
+# Asked only when it is a real question: a terminal to answer on, no --project
+# or --dest already deciding it, and a repository under foot for the second
+# option to mean anything. Run from nowhere in particular, or piped through CI,
+# it stays global without stalling. It has to come before DEST is worked out —
+# the first version of this asked after, where the answer could change nothing.
+if [ "$SCOPE" = "user" ] && [ "$DEST_GIVEN" = "0" ] && [ "$CHECK" = "0" ] \
+   && [ "$UNINSTALL" = "0" ] && [ -r /dev/tty ] \
+   && git rev-parse --show-toplevel >/dev/null 2>&1; then
+  cat <<ASK
+
+Install the skill for every project, or only for this one?
+
+  1) every project on this machine — $HOME/.agents/skills  [default]
+  2) only $(git rev-parse --show-toplevel) — .agents/skills, committed with the repo
+
+ASK
+  printf 'Choice [1]: '
+  read -r scope_choice </dev/tty || scope_choice=""
+  case "${scope_choice:-1}" in
+    1|"") ;;
+    2)    SCOPE="project" ;;
+    *)    echo "unrecognised choice, installing for every project" ;;
+  esac
+fi
 
 if [ -z "$DEST" ]; then
   if [ "$SCOPE" = "project" ]; then DEST="$PWD/.agents/skills"; else DEST="$HOME/.agents/skills"; fi
@@ -93,14 +129,32 @@ if [ "$UNINSTALL" = "1" ]; then
     removed=1
   fi
 
+  # The block the install wrote into an agent's instruction file, and only that
+  # block: it is fenced by markers, so everything the user wrote around it stays.
+  for f in $AGENT_FILES; do
+    [ -f "$f" ] || continue
+    if grep -qF "$MARK_BEGIN" "$f" 2>/dev/null; then
+      MARK_BEGIN="$MARK_BEGIN" MARK_END="$MARK_END" TARGET="$f" python3 - <<'PY' || continue
+import os, re
+from pathlib import Path
+target = Path(os.environ["TARGET"])
+pattern = re.compile(re.escape(os.environ["MARK_BEGIN"]) + r".*?"
+                     + re.escape(os.environ["MARK_END"]) + r"\n?", re.S)
+text = target.read_text(encoding="utf-8")
+target.write_text(pattern.sub("", text).rstrip("\n") + "\n", encoding="utf-8")
+PY
+      echo "removed:   the project-memory block in $f"
+      removed=1
+    fi
+  done
+
   [ "$removed" = "1" ] || echo "nothing to remove: no skill at $target"
 
   cat <<'MSG'
 
 Left alone on purpose:
   .memory/ in your projects   your pages — delete a store yourself if you mean to
-  your agent's instruction file   remove the line naming this skill by hand
-  any agent definition you wrote   yours to keep or delete
+  anything you wrote yourself   an agent definition, or a line you added by hand
 MSG
   exit 0
 fi
@@ -224,25 +278,121 @@ $PYTHON "$DEST/$NAME/scripts/memory_search.py" --help >/dev/null \
 # the files from the repository.
 rm -rf "$DEST/$NAME/scripts/__pycache__"
 
-# The one thing a user must do by hand, printed at the one moment they are
-# looking. Without it the scripts sit on disk and the agent may never reach for
-# them, which is the difference between installed and working — and the
-# installer used to end without mentioning it at all.
-next_steps() {
+# ── connecting an agent ──────────────────────────────────────────────────────
+# The scripts on disk are half an install: an agent reaches for them once the
+# instruction block is in the file it reads every turn. Doing that by hand is
+# one line, and it was still the step people finished the install without
+# taking, because nothing said which file or what to write in it.
+#
+# So the installer offers to write it — asks which agents, shows every path and
+# every line before touching anything, and writes only what was confirmed. The
+# block is fenced by markers so `--uninstall` can take it out again and a second
+# install replaces it instead of stacking duplicates. Claude Code and Gemini
+# read `@path` includes, so they get one line that follows the skill when it
+# updates; Codex has no include syntax, so it gets the text and the version
+# stamp inside it says how old the copy is.
+connect_agents() {
+  local use="$DEST/$NAME/USE.md"
+  [ -r /dev/tty ] || return 0
+
+  cat <<ASK
+
+Which agents should use it? The line goes into that agent's own instruction
+file, and it applies to every project you open with that agent.
+
+  1) Claude Code   $HOME/.claude/CLAUDE.md
+  2) Gemini CLI    $HOME/.gemini/GEMINI.md
+  3) Codex CLI     $HOME/.codex/AGENTS.md
+  4) none — show me what to add and I will do it myself  [default]
+
+ASK
+  printf 'Choice (several allowed, e.g. 1 3): '
+  local picks
+  read -r picks </dev/tty || picks=""
+  picks="${picks:-4}"
+  case " $picks " in *" 4 "*|" ") show_manual "$use"; return 0 ;; esac
+
+  local targets="" kinds=""
+  case " $picks " in *1*) targets="$targets $HOME/.claude/CLAUDE.md"; kinds="$kinds include" ;; esac
+  case " $picks " in *2*) targets="$targets $HOME/.gemini/GEMINI.md"; kinds="$kinds include" ;; esac
+  case " $picks " in *3*) targets="$targets $HOME/.codex/AGENTS.md"; kinds="$kinds paste" ;; esac
+  if [ -z "$targets" ]; then
+    echo "nothing recognised in \"$picks\""; show_manual "$use"; return 0
+  fi
+
+  echo
+  echo "This will change:"
+  local i=1
+  for f in $targets; do
+    local kind; kind="$(echo "$kinds" | cut -d' ' -f$((i + 1)))"
+    if [ "$kind" = "include" ]; then
+      echo "  $f"
+      echo "      + @$use"
+    else
+      echo "  $f"
+      echo "      + the contents of $use ($(wc -l < "$use" | tr -d ' ') lines)"
+    fi
+    i=$((i + 1))
+  done
+  echo
+  printf 'Write it? [Y/n]: '
+  local yes
+  read -r yes </dev/tty || yes=""
+  case "${yes:-y}" in y|Y|yes|YES) ;; *) echo "nothing written"; show_manual "$use"; return 0 ;; esac
+
+  i=1
+  for f in $targets; do
+    local kind; kind="$(echo "$kinds" | cut -d' ' -f$((i + 1)))"
+    MARK_BEGIN="$MARK_BEGIN" MARK_END="$MARK_END" USE="$use" TARGET="$f" KIND="$kind" \
+      $PYTHON - <<'PY'
+import os, re
+from pathlib import Path
+
+target = Path(os.environ["TARGET"])
+use = Path(os.environ["USE"])
+begin, end = os.environ["MARK_BEGIN"], os.environ["MARK_END"]
+body = f"@{use}" if os.environ["KIND"] == "include" else use.read_text(encoding="utf-8").strip()
+block = f"{begin}\n{body}\n{end}\n"
+
+target.parent.mkdir(parents=True, exist_ok=True)
+old = target.read_text(encoding="utf-8") if target.exists() else ""
+# A second install replaces its own block rather than adding another copy.
+pattern = re.compile(re.escape(begin) + r".*?" + re.escape(end) + r"\n?", re.S)
+if pattern.search(old):
+    new, action = pattern.sub(block, old), "updated"
+else:
+    prefix = "" if (not old or old.endswith("\n")) else "\n"
+    new, action = old + prefix + ("\n" if old else "") + block, "wrote"
+target.write_text(new, encoding="utf-8")
+print(f"{action}:   {target}")
+PY
+    i=$((i + 1))
+  done
+  echo
+  echo "Start a new agent session for it to take effect."
+}
+
+show_manual() {
   cat <<MSG
 
-Next: tell your agent it has a memory. One line, once.
+To connect it yourself, one line, once:
 
   Claude Code     add to ~/.claude/CLAUDE.md
   Gemini CLI      add to ~/.gemini/GEMINI.md
 
-      @$DEST/$NAME/USE.md
+      @$1
 
   Codex CLI       paste that file's contents into ~/.codex/AGENTS.md
   Cursor          paste them into Customize → Rules
 
 Per project instead of per machine: put the same line in the project's own
 CLAUDE.md or AGENTS.md. Only one agent: put it in that agent's definition.
+MSG
+}
+
+next_steps() {
+  connect_agents
+  cat <<MSG
 
 To remove everything this installed:  ./install.sh --uninstall
 MSG
