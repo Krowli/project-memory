@@ -6,9 +6,11 @@ instruction block — guarded by five separate drift tests. Those tests were not
 problem; they were the symptom. Ten places that must agree will disagree, and the
 fix was to stop having ten.
 
-What is left: one literal in `__init__.py`, one heading in the changelog, and the
-git tag. This file is what keeps the first from growing a sibling.
+What is left: one literal in `__init__.py`, one heading in the changelog, the npm
+manifest (npm will not read a Python file) and the git tag. This file is what keeps
+that list from growing.
 """
+import json
 import re
 import subprocess
 import sys
@@ -55,6 +57,19 @@ def test_the_instruction_block_is_stamped_at_render_not_in_the_file():
     assert f"pagelore {pagelore.__version__}" in instructions.render()
 
 
+def test_the_npm_manifest_agrees():
+    """npm cannot read `__init__.py`, so this one number is copied rather than
+    derived — the only copy left. `npm/scripts/vendor.js` refuses to pack when the
+    two disagree, so a mismatch cannot reach a published tarball; this fails first,
+    with a clearer message, and without needing Node."""
+    manifest = REPO / "npm" / "package.json"
+    if not manifest.exists():
+        pytest.skip("npm/package.json is not in this distribution")
+    declared = json.loads(manifest.read_text(encoding="utf-8"))["version"]
+    assert declared == pagelore.__version__, \
+        f"npm says {declared}; set it to {pagelore.__version__}"
+
+
 def test_the_changelog_has_a_section_for_it():
     """Pinned as a heading, not a substring: the release workflow's awk extracts
     exactly this shape to make the release notes."""
@@ -92,6 +107,15 @@ def test_the_python_floor_is_declared_and_enforced_in_one_shape():
     # The npm route has no metadata to refuse an old interpreter, so the package does.
     main = (REPO / "src" / "pagelore" / "__main__.py").read_text(encoding="utf-8")
     assert f"sys.version_info < ({major}, {minor})" in main
+
+    # The npm route has no `requires-python` either, and the shim is what prints
+    # the floor to a user who has no Python at all.
+    shim = REPO / "npm" / "bin" / "lore.js"
+    if shim.exists():
+        text = shim.read_text(encoding="utf-8")
+        assert f'const FLOOR = "{floor}"' in text, "the npm shim names another floor"
+        assert "const TOO_OLD = 69" in text, "the shim and __main__.py must agree on 69"
+        assert "raise SystemExit(69)" in main, "__main__.py must exit 69 for the shim"
 
     ci = REPO / ".github" / "workflows" / "test.yml"
     if ci.exists():

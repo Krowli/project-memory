@@ -3,41 +3,179 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # A failed publish burns a version number: PyPI will not accept the same one
+  # twice, even after a delete. So the whole path is rehearsable against TestPyPI
+  # before a tag exists.
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Publish to TestPyPI and pack npm without publishing"
+        type: boolean
+        default: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  verify:
+    name: the tag, the code and the changelog agree
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v5
-
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
-      - name: Verify the tag matches the manifests
+      - id: check
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
-          manifest=$(python -c "import json;print(json.load(open('.claude-plugin/plugin.json'))['version'])")
-          entry=$(python -c "import json;print(json.load(open('.claude-plugin/marketplace.json'))['plugins'][0]['version'])")
-          echo "tag=$tag plugin.json=$manifest marketplace=$entry"
-          test "$tag" = "$manifest" || { echo "::error::tag $tag != plugin.json $manifest"; exit 1; }
-          test "$tag" = "$entry"    || { echo "::error::tag $tag != marketplace $entry"; exit 1; }
-          grep -q "\[$tag\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no [$tag] section"; exit 1; }
+          code=$(python -c "import re,pathlib;print(re.search(r'__version__ = \"([^\"]+)\"', pathlib.Path('src/pagelore/__init__.py').read_text()).group(1))")
+          npm=$(python -c "import json;print(json.load(open('npm/package.json'))['version'])")
+          echo "code=$code npm=$npm"
+
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            echo "tag=$tag"
+            test "$tag" = "$code" || { echo "::error::tag $tag != src/pagelore/__init__.py $code"; exit 1; }
+          fi
+          test "$code" = "$npm" || { echo "::error::npm/package.json $npm != $code"; exit 1; }
+          grep -q "\[$code\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no [$code] section"; exit 1; }
+          echo "version=$code" >> "$GITHUB_OUTPUT"
 
       - name: Extract the changelog section for this version
         run: |
-          awk -v v="${GITHUB_REF_NAME#v}" '
+          awk -v v="${{ steps.check.outputs.version }}" '
             $0 ~ "^## \\["v"\\]" {f=1; next}
             f && /^## \[/ {exit}
             f {print}
           ' CHANGELOG.md > RELEASE_BODY.md
+          test -s RELEASE_BODY.md || { echo "::error::the changelog section is empty"; exit 1; }
           cat RELEASE_BODY.md
 
-      - name: Publish the GitHub release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-body
+          path: RELEASE_BODY.md
+
+  build:
+    name: build both artefacts
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check --strict dist/*
+
+      # Until 0.4.0 the built distribution contained no program at all. Never
+      # publish one again without looking inside it first.
+      - name: The wheel contains the program
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          names = set(zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist())
+          required = {"pagelore/cli.py", "pagelore/search.py", "pagelore/write.py",
+                      "pagelore/data/AGENT.md"}
+          assert required <= names, f"the wheel is missing {sorted(required - names)}"
+          print(f"{len(names)} entries")
+          PY
+
+      - name: Pack the npm tarball
+        working-directory: npm
+        run: npm pack
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/
+            npm/*.tgz
+
+  pypi:
+    name: publish to PyPI
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    # PyPI first, because a PyPI version can never be replaced and an npm one can.
+    # Put the unrecoverable step where a failure costs the least.
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry-run) && 'testpypi' || 'pypi' }}
+    permissions:
+      id-token: write          # trusted publishing: no API token anywhere
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: .
+      # Two steps rather than one with a computed `repository-url`: an empty
+      # string there is not the same as omitting it, and getting that wrong on the
+      # real registry is the one mistake this file cannot take back.
+      - name: TestPyPI (rehearsal)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          repository-url: https://test.pypi.org/legacy/
+      - name: PyPI
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry-run) }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  npm:
+    name: publish to npm
+    needs: [verify, pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write          # provenance, so the tarball is traceable to this run
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: .
+
+      - name: Publish
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry-run) }}
         env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public npm/pagelore-*.tgz
+
+      - name: Dry run
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+        run: |
+          tar -tzf npm/pagelore-*.tgz
+          echo "dry run: not published"
+
+  github-release:
+    name: publish the GitHub release
+    needs: [verify, pypi, npm]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-body
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: .
+      - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file RELEASE_BODY.md
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" --notes-file RELEASE_BODY.md \
+            dist/* npm/pagelore-*.tgz
