@@ -149,7 +149,8 @@ jobs:
           actually written and the command after this one has something to find.
           A shorter body is refused, which is the behaviour being relied on here.
           PMEOF
-          lore search "probe floor" | tee /dev/stderr | grep -q probe
+          lore search "probe floor"
+          lore search "probe floor" | grep -q probe
           lore search --touching src/a.ts | grep -q "touches src/a.ts"
           lore stats
           lore doctor || true          # exits non-zero when nothing is connected, which is the case here

@@ -34,7 +34,14 @@ def machine(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    # `Path.home()` reads HOME on POSIX and USERPROFILE on Windows, so faking only
+    # HOME leaves the Windows runs pointed at the real home directory. `--store home`
+    # then created `C:\Users\runneradmin\.project-memory` on a CI machine, which is
+    # how this was found: the assertion below that the target sits under the fake home.
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("HOMEDRIVE", raising=False)
+    monkeypatch.delenv("HOMEPATH", raising=False)
     monkeypatch.setenv(instructions.HOME_ENV, str(home / ".project-memory"))
     monkeypatch.setenv(instructions.NO_REFRESH_ENV, "1")
     monkeypatch.chdir(project)
@@ -145,6 +152,8 @@ def test_the_home_store_symlinks_out_of_the_repo_and_gitignores_the_link(machine
     assert link.is_symlink(), "the store is a real directory, not a link out of the repo"
     target = link.resolve()
     assert home in target.parents, f"{target} is not under the fake home"
+    assert instructions.home() in target.parents, \
+        "the store home and the block home are computed in two places again"
     assert ".memory/" in (project / ".gitignore").read_text(encoding="utf-8")
     assert str(target) in out
 

@@ -116,7 +116,11 @@ def _apply_store(mode: str, root: Path, out) -> None:
         print(f"store:     {store}  (committed with the repo — do not write secrets here)",
               file=out)
         return
-    target = Path.home() / ".project-memory" / root.name
+    # `instructions.home()`, not `Path.home() / ".project-memory"`: the same directory
+    # by default, but one place decides where it is. Two computations of one path drift,
+    # and this one drifted in the only way that matters — it could not be redirected, so
+    # a test of this mode wrote into the real home directory on a CI machine.
+    target = instructions.home() / root.name
     target.mkdir(parents=True, exist_ok=True)
     if store.exists() and not store.is_symlink():
         print(f"note:      {store} already exists as a real directory; leaving it alone.\n"
