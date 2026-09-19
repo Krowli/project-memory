@@ -6,6 +6,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`evals/mcp_probe.py`**, a stdio MCP server exposing the two tools, and
+  `evals/acceptance.py --pointer mcp|mcp+include` to run a real session against
+  it. The CLI was chosen early and never measured against MCP; this settles it
+  with numbers rather than opinion. Retrieval quality was never the question —
+  the server calls the same functions — so what was measured is whether an agent
+  reaches for the memory more reliably when the tools are in its tool list.
+  Fifteen sessions per arm: the instruction line 15/15, MCP on Claude Code's
+  default settings **0/15**, MCP with `ENABLE_TOOL_SEARCH=false` 15/15, both
+  together 15/15. The zero is Claude Code deferring MCP tools behind tool search
+  by default, so the single advantage MCP was supposed to have is absent out of
+  the box. MCP is not shipped; the probe stays so the question can be re-run.
+
 ## [0.3.4] - 2026-09-19
 
 ### Added

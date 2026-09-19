@@ -28,6 +28,9 @@ thing the README tells a user to set up:
             on a harness with no import syntax
   include   a one-line `@path` import of the installed USE.md, what a user does
             on Claude Code and Gemini — the line the README claims works
+  mcp       no instruction block at all: the memory reached as MCP tools, whose
+            names and descriptions the harness puts in front of the model by
+            itself. Pass the agent an `--mcp-config {project}/.mcp.json`
 
 `{prompt}`, `{project}` and `{repo}` are substituted into the agent command.
 The command is split with shlex, so quote as you would in a shell.
@@ -65,9 +68,10 @@ def build_project(directory: Path, pointer: str) -> Path:
     (project / "src" / "main.ts").write_text("export {}\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q"], cwd=project, check=True)
     harness.materialise(harness.load_corpus()["pages"], project)
-    skills = project / ".agents" / "skills"
-    skills.mkdir(parents=True)
-    (skills / "project-memory").symlink_to(REPO / "skills" / "project-memory")
+    if pointer != "mcp":
+        skills = project / ".agents" / "skills"
+        skills.mkdir(parents=True)
+        (skills / "project-memory").symlink_to(REPO / "skills" / "project-memory")
     use = REPO / "skills" / "project-memory" / "USE.md"
     if pointer == "paste":
         snippet = use.read_text(encoding="utf-8")
@@ -78,6 +82,16 @@ def build_project(directory: Path, pointer: str) -> Path:
         # The path is absolute here because the skill under test is this working
         # tree rather than an install; a user writes the ~/ form the README gives.
         (project / "CLAUDE.md").write_text(f"@{use}\n", encoding="utf-8")
+    elif pointer in ("mcp", "mcp+include"):
+        if pointer == "mcp+include":
+            (project / "CLAUDE.md").write_text(f"@{use}\n", encoding="utf-8")
+        # Nothing tells the model the memory exists except the tool list, which
+        # is the whole point of the comparison.
+        (project / ".mcp.json").write_text(json.dumps({"mcpServers": {"project-memory": {
+            "type": "stdio", "command": sys.executable,
+            "args": [str(HERE / "mcp_probe.py")],
+            "env": {"PROJECT_MEMORY_DIR": str(project / ".memory")},
+        }}}, indent=2), encoding="utf-8")
     return project
 
 
@@ -98,8 +112,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--agent", required=True,
                     help="agent command with {prompt}, {project} and {repo} placeholders")
-    ap.add_argument("--pointer", choices=("none", "paste", "include"), default="none",
-                    help="how the instruction block reaches the agent (default: none)")
+    ap.add_argument("--pointer", choices=("none", "paste", "include", "mcp", "mcp+include"), default="none",
+                    help="how the memory reaches the agent (default: none)")
     ap.add_argument("--question", default=QUESTION)
     ap.add_argument("--keep", action="store_true", help="leave the project on disk")
     ap.add_argument("--timeout", type=int, default=600)

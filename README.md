@@ -441,6 +441,34 @@ agent to search before answering. One run each, one question. Gemini, Cursor,
 Kimi, Copilot, OpenCode and Pi are unmeasured until someone runs the same
 command there.
 
+### MCP, measured and refused
+
+An MCP server here is a wrapper: it calls the same two functions, so retrieval
+quality cannot differ. The claim to test was the other one — that an agent
+reaches for the memory more reliably when the tools are in its tool list than
+when an instruction file tells it about a command. `evals/mcp_probe.py` is that
+server, stdlib only; `evals/acceptance.py --pointer mcp|include|mcp+include`
+runs it. Fifteen real sessions per arm on a task-shaped prompt that never says
+"why", where the store holds the decision and its reversal.
+
+| how the agent learns the memory exists | searched before answering |
+|---|---|
+| one `@path` line in the project's `CLAUDE.md` | 15 / 15 |
+| MCP tools, Claude Code's default settings | **0 / 15** |
+| MCP tools, `ENABLE_TOOL_SEARCH=false` | 15 / 15 |
+| MCP tools plus the `@path` line | 15 / 15 |
+
+The zero is not a model ignoring a tool it can see. Claude Code defers MCP tools
+behind tool search by default, so they are not in the tool list at session start
+at all, and the one advantage MCP was supposed to have does not exist out of the
+box. With the deferral turned off it matches the instruction line exactly and
+never beats it; added on top of it, it changes nothing.
+
+So MCP is not shipped. It would cost a config entry in each agent's own format
+against one copied directory, a process per session, and context for a tool
+list, and it buys nothing measurable. The probe stays in `evals/` so the
+question can be re-run rather than re-argued.
+
 ### Speed, and the cost of the gate
 
 End to end, as a shell invocation: 90 pages 235 ms reading every page against
@@ -460,6 +488,7 @@ python3 evals/run.py --by-type                 # retrieval, touching, ambiguous,
 python3 evals/dense_probe.py                   # needs fastembed; --static MODEL needs model2vec
 python3 evals/compare_basic_memory.py          # needs basic-memory
 python3 evals/acceptance.py --agent '...'      # a real agent session; see the file for commands
+python3 evals/acceptance.py --pointer mcp ...  # the same session reaching the store over MCP
 pytest                                         # 209 tests, both retrieval paths in CI
 ```
 
