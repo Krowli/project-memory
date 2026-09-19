@@ -180,3 +180,49 @@ def test_a_dead_process_is_reported_dead_and_a_live_one_alive():
     dead.wait()
     assert memory_lib._process_alive(dead.pid) is False
     assert memory_lib._process_alive(_os.getpid()) is True
+
+
+def test_an_unlocked_writer_notices_it_was_overwritten_and_writes_again(tmp_path, monkeypatch):
+    """The lock is advisory: after the timeout a writer proceeds without it, because
+    losing a section is bad and recording nothing is worse. That leaves a window in
+    which another writer can overwrite this one between its read and its write, and a
+    Windows runner with twelve writers on one slug found it — section 00 vanished while
+    every command exited 0.
+
+    Simulated rather than raced, so it is the same test on every machine: the lock
+    reports that it was not held, and the page is clobbered once, exactly in the gap.
+    """
+    from pagelore import lib as memory_lib
+    from pagelore import write as memory_write
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "real.ts").write_text("export {}")
+    store = tmp_path / ".memory"
+    monkeypatch.chdir(tmp_path)
+
+    memory_write.write_page(store, "shared", "Shared page", "concept",
+                            ["src/real.ts"], f"## Section 00\n\n{FILLER}\n")
+    page = store / "shared.md"
+    theirs = page.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(memory_lib.page_lock, "__enter__",
+                        lambda self: setattr(self, "held", False) or self)
+    writes = []
+    real = memory_lib.atomic_write
+
+    def clobbered_once(path, text):
+        real(path, text)
+        writes.append(text)
+        if len(writes) == 1:        # the other writer lands in the gap, exactly once
+            real(path, theirs)
+
+    monkeypatch.setattr(memory_lib, "atomic_write", clobbered_once)
+    monkeypatch.setattr(memory_write, "atomic_write", clobbered_once)
+
+    memory_write.write_page(store, "shared", "Shared page", "concept",
+                            ["src/real.ts"], f"## Section 01\n\n{FILLER}\n")
+
+    body = page.read_text(encoding="utf-8")
+    assert len(writes) > 1, "an unlocked write that was overwritten did not try again"
+    assert "## Section 01" in body, "the retry did not restore the lost section"
+    assert "## Section 00" in body, "the retry dropped the other writer's section"

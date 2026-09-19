@@ -29,7 +29,13 @@ TRACKED_MARKER = ".tracked"
 SESSION_ENV = "CLAUDE_CODE_SESSION_ID"
 
 LOCK_STALE_SECONDS = 30.0
-LOCK_TIMEOUT_SECONDS = 10.0
+# How long to wait for a lock whose owner is still alive. A dead owner is handled
+# separately and at once by `_owner_is_gone`, so this number only has to cover a
+# live holder that is slow — and it was tuned against a fast POSIX filesystem. Twelve
+# writers onto one slug, which is what subagent fan-out produces, ran past ten
+# seconds on a Windows runner and the last one proceeded unlocked and lost a section.
+# Waiting longer costs nothing when there is no contention.
+LOCK_TIMEOUT_SECONDS = 60.0
 # Windows refuses to replace a file another process has open; POSIX never does.
 REPLACE_TIMEOUT_SECONDS = 5.0
 
@@ -266,8 +272,15 @@ def atomic_write(path: Path, text: str) -> None:
     Rewriting in place truncates first, so a concurrent search could parse a
     half-written page and rank the fragment as the page's real content, and a
     crash in that window left the page permanently short with no backup.
+
+    The scratch name carries the thread id as well as the pid. With the pid alone
+    two threads in one process picked the same scratch file, and each deleted or
+    replaced the other's: `os.replace` then raised FileNotFoundError on a file that
+    had existed a moment earlier. One process per write is the shipped shape, so
+    nothing hit this in production, but `write_page` is importable and the MCP probe
+    calls it directly.
     """
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
         tmp.write_text(text, encoding="utf-8")
         # POSIX replaces a file no matter who has it open. Windows refuses with
@@ -396,6 +409,10 @@ class page_lock:
     def __init__(self, path: Path):
         self.lock = path.with_name(f".{path.name}.lock")
         self.fd: int | None = None
+        # False when the timeout fired or the store could not be locked at all, so
+        # the caller can tell an ordinary write from one that raced. Nothing here
+        # refuses to write; the flag exists so the caller can check its own work.
+        self.held = False
 
     def __enter__(self) -> page_lock:
         deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
@@ -403,6 +420,7 @@ class page_lock:
             try:
                 self.fd = os.open(self.lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
                 os.write(self.fd, f"{os.getpid()} {_boot_id()}".encode())
+                self.held = True
                 return self
             except FileExistsError:
                 if _owner_is_gone(self.lock):

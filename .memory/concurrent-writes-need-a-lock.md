@@ -3,9 +3,10 @@ slug: concurrent-writes-need-a-lock
 title: "Two agents on one slug silently lost each other's sections"
 kind: bug
 created: 2026-08-17
-updated: 2026-08-17
+updated: 2026-09-19
 sources:
   - src/pagelore/lib.py
+  - src/pagelore/write.py
   - tests/test_concurrency.py
 ---
 
@@ -37,3 +38,35 @@ worse.
 
 The log is appended with one `O_APPEND` `os.write` per line, so parallel writers
 cannot interleave halves of two records into one unparseable line.
+
+## What the lock still did not cover
+
+The per-page lock is advisory on purpose: after `LOCK_TIMEOUT_SECONDS` a writer
+proceeds without it, because losing a section is bad and refusing to record anything
+is worse. That leaves one window, and on 2026-09-19 a Windows CI runner found it.
+Twelve writers on one slug, which is what subagent fan-out produces, and section 00
+vanished while every one of the twelve commands exited 0. The exact failure this page
+was written about, returning through the escape hatch built into its own fix.
+
+Two causes, both of them a number tuned on the wrong machine.
+
+The timeout was ten seconds, chosen against a fast POSIX filesystem. A dead holder is
+already handled at once and separately by `_owner_is_gone`, so the timeout only ever
+has to cover a holder that is alive and slow. Twelve Windows processes, each paying
+interpreter startup and a virus scanner per file write, ran past ten seconds. It is
+now sixty, which costs nothing when there is no contention.
+
+And the escape hatch itself never checked its own work. An unlocked write now re-reads
+the page afterwards, and if its own `## ` headers are not there it merges and writes
+again, three times at most. Three because each attempt is a full read-merge-write and
+the case it covers is already a writer that could not get a lock for a minute; looping
+past that trades a possible lost section for a command that never returns.
+
+## The scratch file was named by pid alone
+
+Found while writing the test for the above. `atomic_write` built its temporary file as
+`.<page>.<pid>.tmp`, so two threads in one process picked the same name and each
+deleted or replaced the other's — `os.replace` then raised FileNotFoundError on a file
+that had existed a moment earlier. One process per write is the shipped shape, so this
+never fired in production, but `write_page` is importable and `evals/mcp_probe.py`
+calls it directly. The name now carries the thread id too.

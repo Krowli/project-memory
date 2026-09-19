@@ -181,6 +181,12 @@ def render_frontmatter(meta: dict) -> str:
     return "---\n" + "\n".join(lines) + "\n---\n\n"
 
 
+# Three, not more: each retry is a full read-merge-write, and the case it covers is
+# already a writer that could not get a lock for a minute. Looping past that trades a
+# possible lost section for a command that never returns.
+UNLOCKED_RETRIES = 3
+
+
 def write_page(store: Path, slug: str, title: str, kind: str,
                sources: list[str], body: str,
                supersedes: list[str] | None = None) -> Path:
@@ -190,22 +196,48 @@ def write_page(store: Path, slug: str, title: str, kind: str,
     ensure_store(store)
     path = store / f"{slug}.md"
     today = _dt.date.today().isoformat()
+    wanted = [h for h, _ in split_sections(body) if h is not None]
 
-    with page_lock(path):
-        meta: dict = {}
-        result = MergeResult(body=body)
-        if path.exists():
-            existing = parse_page(path)
-            meta = dict(existing.meta)
-            result = merge(existing.body, body)
-            sources = sorted(set(sources) | set(meta.get("sources") or []))
-            supersedes = sorted(set(supersedes or []) | set(meta.get("supersedes") or []))
-        meta.update({
-            "slug": slug, "title": " ".join(title.split()), "kind": kind,
-            "created": meta.get("created", today), "updated": today,
-            "sources": sources, "supersedes": supersedes or [],
-        })
-        atomic_write(path, render_frontmatter(meta) + result.body.strip() + "\n")
+    # The lock is advisory: after LOCK_TIMEOUT_SECONDS a writer proceeds without it,
+    # because losing a section is bad and refusing to record anything is worse. That
+    # leaves one window in which two writers can both be between their read and their
+    # write, and a Windows runner with twelve writers on one slug found it — section
+    # 00 vanished while every command exited 0, which is the exact failure the lock
+    # exists to prevent. So an unlocked write now checks its own work and tries again.
+    # A locked write is the normal path and pays nothing for this.
+    for attempt in range(UNLOCKED_RETRIES):
+        with page_lock(path) as lock:
+            meta: dict = {}
+            result = MergeResult(body=body)
+            merged_sources, merged_supersedes = sources, supersedes
+            if path.exists():
+                existing = parse_page(path)
+                meta = dict(existing.meta)
+                result = merge(existing.body, body)
+                merged_sources = sorted(set(sources) | set(meta.get("sources") or []))
+                merged_supersedes = sorted(set(supersedes or [])
+                                           | set(meta.get("supersedes") or []))
+            meta.update({
+                "slug": slug, "title": " ".join(title.split()), "kind": kind,
+                "created": meta.get("created", today), "updated": today,
+                "sources": merged_sources, "supersedes": merged_supersedes or [],
+            })
+            atomic_write(path, render_frontmatter(meta) + result.body.strip() + "\n")
+            if lock.held:
+                return path
+
+        # Unlocked. Re-read outside the lock context and confirm nothing overwrote us
+        # in the gap. On the last attempt keep what we wrote rather than looping for
+        # ever: a page that may have lost a section still beats no page at all.
+        if attempt == UNLOCKED_RETRIES - 1:
+            return path
+        try:
+            written = path.read_text(encoding="utf-8")
+        except OSError:
+            return path
+        if all(header in written for header in wanted):
+            return path
+
     return path
 
 
