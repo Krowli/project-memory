@@ -113,3 +113,26 @@ def test_without_the_flag_nothing_changes(populated):
     before = slugs(memory_search.search("display sleep", populated))
     after = slugs(memory_search.search("display sleep", populated, touching=[]))
     assert before == after == ["webgl-context-loss"]
+
+
+def test_the_marker_survives_a_console_that_cannot_encode_it(populated):
+    """`▸` is U+25B8 and `⚠` is U+26A0, and neither exists in cp1252 — the encoding a
+    Windows console still hands Python under a legacy code page. Printing a hit raised
+    UnicodeEncodeError and the command died with nothing on stdout.
+
+    Not cosmetic: those two markers carry the two things a reader most needs, that a
+    page is about this file and that a page was superseded. Found by the Windows
+    install smoke on the first run of the new CI, reproduced here on any OS by asking
+    the child for that encoding.
+    """
+    import subprocess
+
+    import conftest
+
+    out = subprocess.run([*conftest.LORE, "search", "--store", str(populated),
+                          "--touching", "src/terminal/renderer.ts"],
+                         capture_output=True, text=True, encoding="utf-8",
+                         env=conftest.lore_env(PYTHONIOENCODING="cp1252"))
+    assert out.returncode == 0, out.stderr
+    assert "touches" in out.stdout, out.stdout
+    assert "UnicodeEncodeError" not in out.stderr

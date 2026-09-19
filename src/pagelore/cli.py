@@ -108,7 +108,30 @@ def usage(prog: str = "lore") -> str:
     ]))
 
 
+def speak_utf8() -> None:
+    """Make the output encodable, whatever console this landed on.
+
+    Search results carry `▸ touches <path>` and `⚠ superseded by <slug>`, and neither
+    U+25B8 nor U+26A0 exists in cp1252 — the encoding a Windows console still hands
+    Python when the code page is a legacy one. Printing a hit then raised
+    UnicodeEncodeError and the command died, which is not a cosmetic failure: those
+    two markers carry the two things a reader most needs, that a page is about this
+    file and that a page was replaced.
+
+    `errors="replace"` rather than a plain reconfigure, so that a console which
+    really cannot render a character degrades to `?` instead of taking the command
+    down with it. Nothing here can raise: a captured stream may have no
+    `reconfigure` at all.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    speak_utf8()
     argv = list(sys.argv[1:] if argv is None else argv)
     prog = invoked_as()
 
