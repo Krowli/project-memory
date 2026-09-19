@@ -20,6 +20,36 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   by default, so the single advantage MCP was supposed to have is absent out of
   the box. MCP is not shipped; the probe stays so the question can be re-run.
 
+## [0.3.5] - 2026-09-19
+
+The final release installed as a copied skill directory. Nothing in the code
+changed; this tag exists so that the install instructions published for 0.3.x keep
+resolving to something, instead of to a 404, after the packaging is deleted.
+
+**The program is now installed with a package manager, and the command is `lore`:**
+
+```bash
+pipx install pagelore          # or: npm install -g pagelore
+lore init
+```
+
+Your pages are safe and unchanged — `.memory/` is byte-compatible and `lore search`
+finds every page you already have.
+
+If you installed 0.3.x, remove it before or after installing the new one; the two
+do not interfere, but leaving the old block in your agent's instruction file leaves
+an `@path` pointing at a directory that is about to disappear, and a dead `@path`
+produces no error in any harness. The agent just stops searching.
+
+```bash
+sh install.sh --uninstall                     # the shell install
+/plugin uninstall project-memory              # Claude Code
+gemini extensions uninstall project-memory    # Gemini CLI
+```
+
+See the 0.4.0 notes for the full upgrade path and for why the name changed:
+`project-memory` and `pm` were both already taken on PyPI and on npm.
+
 ## [0.3.4] - 2026-09-19
 
 ### Added

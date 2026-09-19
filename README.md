@@ -1,5 +1,19 @@
 # project-memory
 
+> **This version is retired.** The program is a package now, and the command is
+> `lore`:
+>
+> ```bash
+> pipx install pagelore          # or: npm install -g pagelore
+> lore init
+> ```
+>
+> Your pages are safe: `.memory/` is unchanged and `lore search` finds every page.
+> `0.3.5` is the last release that installs as a copied skill directory, and it
+> stays installable. Everything below describes that older shape. See
+> [CHANGELOG.md](CHANGELOG.md) for the upgrade path — in particular, an `@path`
+> line pointing into the old skill directory fails silently once it is gone.
+
 Durable project memory for coding agents: decisions, contracts and bug
 post-mortems as **markdown pages on disk**, searchable without a server.
 

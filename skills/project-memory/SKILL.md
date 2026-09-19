@@ -5,10 +5,15 @@ license: MIT
 compatibility: Requires Python 3.9+, which is what a stock macOS already has. No network access and no API keys needed.
 metadata:
   repository: https://github.com/Krowli/project-memory
-  version: "0.3.4"
+  version: "0.3.5"
 ---
 
 # Project memory
+
+> Retired shape. This skill is now installed as a package: `pipx install pagelore`
+> (or `npm install -g pagelore`), then `lore init`, and the command an agent runs is
+> `lore search "…"` with no path in it. The commands below still work where this
+> directory is installed.
 
 Markdown pages in `.memory/` are the durable record of decisions, contracts and
 bugs for this project. Plain files: greppable, diffable, reviewable in a PR, and
