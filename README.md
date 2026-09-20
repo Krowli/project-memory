@@ -63,7 +63,8 @@ become a numbered prompt instead.
 3. **How the agent reaches it**: the instruction file, an MCP server in the agent's
    tool list, or both. Enter keeps the file — the measured default — and the
    measurement is on the question: on Claude Code the file searched 15/15, MCP alone
-   0/15 (see [below](#mcp-measured--and-offered-as-a-choice)). The choice is yours.
+   0/15 in September and 3/5 on a later version (see
+   [below](#mcp-measured--and-offered-as-a-choice)). The choice is yours.
 4. **Where this project's pages live**: private and gitignored (the default),
    committed and reviewed in pull requests, or outside the repository behind a
    symlink.
@@ -438,9 +439,15 @@ For a while that kept MCP out of the package. It is shipped now, as `lore mcp`,
 and the numbers are what changed their job: they are an argument for a default,
 not for deciding on someone's behalf. So the wizard asks, the file is what Enter
 gives you, and the measurement is printed on the question where the choice is
-made. What would move the default is a harness that shows MCP tools by default
-and has no instruction file worth writing into; the acceptance run is there to
-re-measure rather than re-argue.
+made.
+
+Re-measured the day it shipped (2026-09-20, Claude Code 2.1.278, five sessions
+per arm, the shipped server): MCP alone at default settings **3 / 5**, MCP alone
+with `ENABLE_TOOL_SEARCH=false` 5 / 5, MCP plus the `@path` line 5 / 5. The
+default arm is no longer zero and not yet reliable; the file is still the only
+arm that has never missed. What would move the default is a harness that shows
+MCP tools by default and has no instruction file worth writing into; the
+acceptance run is there to re-measure rather than re-argue.
 
 
 ### Speed, and the cost of the gate
@@ -533,7 +540,7 @@ the line that tells the agent about it.
 | Gemini CLI | `@~/.project-memory/AGENT.md` in `GEMINI.md` | per vendor docs |
 | Cursor | the block pasted into User Rules | per vendor docs |
 | Anything else | either, in whatever it reads every turn | n/a |
-| Any of the three, over MCP | `lore mcp` in its tool list, registered by `lore init --via mcp` | Claude Code: 0 of 15 alone at default settings, 15 of 15 with `ENABLE_TOOL_SEARCH=false` or the file |
+| Any of the three, over MCP | `lore mcp` in its tool list, registered by `lore init --via mcp` | Claude Code: alone at default settings 0 of 15, later 3 of 5; every time with `ENABLE_TOOL_SEARCH=false` or the file |
 
 Python 3.9 or newer, which is what a stock macOS ships. The floor is declared in
 one place and checked everywhere it matters: `requires-python` stops `pip`, an

@@ -17,8 +17,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A fourth question: how the agent reaches it.** Instruction file, MCP server, or
   both; `--via file|mcp` is the same answer for a script. Enter keeps the file — the
   measured default — and the measurement sits on the question: on Claude Code the
-  file searched 15/15, MCP alone 0/15. The numbers used to keep MCP out of the
-  package; they are an argument for a default, not for deciding on someone's behalf.
+  file searched 15/15, MCP alone 0/15 in September and 3/5 re-measured on the day this
+  shipped. The numbers used to keep MCP out of the package; they are an argument for
+  a default, not for deciding on someone's behalf.
   `.mcp.json` and Gemini's `settings.json` are merged in place with everything else
   kept; `~/.claude.json` and Codex's `config.toml` go through the harness's own
   `mcp add`, run when it is on PATH and printed when it is not.

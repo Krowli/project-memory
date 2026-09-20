@@ -7,9 +7,9 @@ updated: 2026-09-20
 supersedes:
   - mcp-measured-and-refused
 sources:
-  - src/pagelore/mcp.py
-  - src/pagelore/init.py
   - evals/mcp_probe.py
+  - src/pagelore/init.py
+  - src/pagelore/mcp.py
 ---
 
 ## What changed, and what did not
@@ -81,3 +81,25 @@ this one's and would have sent `uninstall` after it.
 A harness that shows MCP tools by default and has no instruction file worth
 writing into. Re-run the three acceptance arms there before changing what Enter
 gives.
+
+## Re-measured after shipping
+
+2026-09-20, Claude Code 2.1.278, the shipped server through `evals/mcp_probe.py`,
+five runs per arm after one trial run of each (trial in brackets). Agent command:
+`claude --setting-sources project --no-session-persistence --mcp-config
+{project}/.mcp.json --strict-mcp-config --allowedTools
+mcp__project-memory__memory_search mcp__project-memory__memory_write Read -p
+{prompt}`; the `mcp+include` arm also allowed `Bash(lore:*)` and `Bash(cat:*)`.
+
+| arm | searched before answering |
+|---|---|
+| MCP alone, default settings | 3/5 (trial: 1/1) — was 0/15 on 2026-09-19 |
+| MCP alone, `ENABLE_TOOL_SEARCH=false` | 5/5 (trial: 1/1) |
+| MCP plus the `@path` line | 5/5 (trial: 1/1) |
+
+The default arm is no longer zero and not yet reliable: two of the five sessions
+answered without a search. Not investigated why the number moved — the harness
+version differs from the September 19 run, and `--strict-mcp-config` with two
+tools may keep the deferrable definitions under the 10 % threshold that turns
+tool search on. What the wizard says was updated to carry both numbers; the
+default stays the file, which is still the only arm that has never missed.

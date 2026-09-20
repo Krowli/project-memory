@@ -7,8 +7,9 @@ nothing about which file an agent reads.
 The fourth — how the agent reaches the memory — is the person's choice between the
 instruction file and an MCP server, or both. It exists because the measurement that
 kept MCP out of the package (0/15 searches on Claude Code's defaults, 15/15 with the
-file) is an argument for a default, not for deciding on someone's behalf. So the
-numbers sit on the question and the file stays what Enter gives you.
+file; re-measured 3/5 on a later Claude Code) is an argument for a default, not for
+deciding on someone's behalf. So the numbers sit on the question and the file stays
+what Enter gives you.
 
 The first question is scope, and it exists because it was missing. The wizard used
 to offer three files and all three were global; the screen said "applies to every
@@ -492,7 +493,7 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
         if not via and interactive:
             via = tuple(menu.ask(
                 "How should the agent reach it?",
-                "Enter keeps the file. Measured on Claude Code: file 15/15, MCP alone 0/15.",
+                "Enter keeps the file. Measured: file 15/15; MCP alone 0/15, later 3/5.",
                 [("file", "Instruction file", "one @-line the agent reads every turn"),
                  ("mcp", "MCP server", "in its tool list, deferred by default on Claude Code")],
                 multi=True, cursor=0, stdin=inp, out=out, keyboard=keyboard))
@@ -511,8 +512,8 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
                 _write_mcp(chosen, cmd, out, scope_root)
                 if via == ("mcp",) and "claude" in chosen:
                     print("note:      measured on Claude Code: MCP alone searched 0/15 at default "
-                          "settings — the tools sit behind tool search;", file=out)
-                    print("           15/15 with ENABLE_TOOL_SEARCH=false, or with the "
+                          "settings in 2026-09, 3/5 on a later version;", file=out)
+                    print("           every time with ENABLE_TOOL_SEARCH=false, or with the "
                           "instruction file as well", file=out)
             print("\nStart a new agent session for it to take effect.", file=out)
         else:

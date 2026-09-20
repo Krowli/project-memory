@@ -11,9 +11,11 @@ This was a probe in `evals/` for a month and measured before it shipped: on Clau
 Code's default settings an agent with only these tools searched 0 times in 15,
 because the harness defers MCP tools behind its tool search; with the deferral off,
 or with the instruction file as well, 15 in 15 — equal to the instruction file
-alone, never better. So the file stays the default `lore init` recommends, and this
-is the choice a person makes with the numbers in front of them. The probe stays as a
-wrapper so the measurement can be re-run.
+alone, never better. Re-measured on the day it shipped, on a later Claude Code, the
+default arm was 3 in 5: no longer zero, not yet reliable. So the file stays the
+default `lore init` recommends, and this is the choice a person makes with the
+numbers in front of them. The probe stays as a wrapper so the measurement can be
+re-run.
 
 Two rules the transport imposes, both easy to break silently:
 
