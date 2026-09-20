@@ -255,6 +255,70 @@ def test_uninstall_takes_out_the_block_and_leaves_the_pages(machine, capsys):
     assert ".memory/" in capsys.readouterr().out
 
 
+def test_uninstall_removes_our_mcp_entry_and_keeps_the_neighbours(machine, capsys):
+    _, project = machine
+    target = project / ".mcp.json"
+    target.write_text(json.dumps({"mcpServers": {"other": {"command": "x"}}}), encoding="utf-8")
+    run("1\n1\n2\ny\n1\n")
+    assert uninstall.main([]) == 0
+    assert mcp_json(target) == {"mcpServers": {"other": {"command": "x"}}}
+    assert "MCP server" in capsys.readouterr().out
+
+
+def test_uninstall_deletes_an_mcp_json_that_only_we_wrote(machine):
+    _, project = machine
+    run("1\n1\n2\ny\n1\n")
+    assert (project / ".mcp.json").is_file()
+    assert uninstall.main([]) == 0
+    assert not (project / ".mcp.json").exists(), "an empty .mcp.json was left in the repo"
+
+
+def test_uninstall_never_deletes_gemini_settings(machine):
+    """settings.json is Gemini's file; emptied of our entry it stays where it was."""
+    home, project = machine
+    (home / ".gemini").mkdir()
+    (home / ".gemini" / "settings.json").write_text(json.dumps({"theme": "dark"}), encoding="utf-8")
+    run("2\n2\n2\ny\n1\n")
+    run("1\n2\n2\ny\n1\n")
+    assert uninstall.main([]) == 0
+    assert mcp_json(home / ".gemini" / "settings.json") == {"theme": "dark"}
+    assert mcp_json(project / ".gemini" / "settings.json") == {}
+    assert (project / ".gemini" / "settings.json").is_file()
+
+
+def test_uninstall_prints_the_harness_remove_command_it_cannot_run(machine, capsys):
+    home, _ = machine
+    claude_json = home / ".claude.json"
+    claude_json.write_text(json.dumps({"mcpServers": {"project-memory": {"command": "lore"}}}),
+                           encoding="utf-8")
+    (home / ".codex").mkdir()
+    config = home / ".codex" / "config.toml"
+    config.write_text('[mcp_servers.project-memory]\ncommand = "lore"\n', encoding="utf-8")
+    before = claude_json.read_bytes(), config.read_bytes()
+
+    assert uninstall.main([]) == 0               # which → None: nothing to run it with
+    out = capsys.readouterr().out
+    assert "claude mcp remove --scope user project-memory" in out
+    assert "codex mcp remove project-memory" in out
+    assert (claude_json.read_bytes(), config.read_bytes()) == before, "it edited a file it must not"
+
+
+def test_uninstall_runs_the_harness_remove_when_it_is_there(machine, monkeypatch):
+    home, project = machine
+    (home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"project-memory": {"command": "lore"}}}), encoding="utf-8")
+    ran = []
+
+    def fake_run(argv, *a, **k):
+        ran.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+    monkeypatch.setattr(init, "_project_root", lambda: project)
+    monkeypatch.setattr(init.subprocess, "run", fake_run)
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: "/fake/claude" if name == "claude" else None)
+    assert uninstall.main([]) == 0
+    assert ran == [["/fake/claude", "mcp", "remove", "--scope", "user", "project-memory"]]
+
+
 def test_doctor_calls_nothing_connected_a_fault(machine):
     """Measured, an agent with the block searches 15 of 15 times and one without it
     never does. "Installed but not connected" is therefore broken, not neutral."""

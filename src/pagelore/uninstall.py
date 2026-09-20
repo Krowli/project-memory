@@ -10,16 +10,60 @@ chosen to avoid, so leaving it to `pipx` is not an option.
 It removes exactly what `lore init` wrote, and says what it deliberately did not:
 the pages are the user's, and a program that can delete them by accident is worse
 than no uninstaller.
+
+The MCP route is taken out the way it went in: our entry is dropped from the JSON
+files this program merged it into — and a `.mcp.json` that is empty afterwards is
+deleted, because this program created it, while Gemini's settings.json is never
+deleted, because it did not — and where the entry went through the harness's own
+`mcp add`, its `mcp remove` is run when the harness is here and printed when not.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
+from pathlib import Path
 
-from . import instructions
+from . import init, instructions
 from .cli import add_version
-from .init import AGENTS
+from .init import AGENTS, MCP_SERVER
+
+
+def _remove_mcp(root: Path | None, out) -> bool:
+    """Take the MCP registration back out of every place `lore init` can put it.
+    Returns True when anything was removed or a removal command was run or printed."""
+    home = Path.home()
+    did = False
+    # The JSON files this program merges into. `.mcp.json` is ours to delete once it
+    # is empty — nothing else writes it here — and settings.json never is.
+    json_files = ([root / ".mcp.json", root / ".gemini" / "settings.json"] if root else []) \
+        + [home / ".gemini" / "settings.json"]
+    for path in json_files:
+        if not path.is_file():
+            continue
+        try:
+            changed, empty = init.remove_json_server(path)
+        except OSError as exc:
+            print(f"skipped:   {path} ({exc})", file=sys.stderr)
+            continue
+        if not changed:
+            continue
+        did = True
+        if empty and path.name == ".mcp.json":
+            path.unlink()
+            print(f"removed:   {path}  (only our MCP server was in it)", file=out)
+        else:
+            print(f"removed:   the MCP server from {path}", file=out)
+    # The files that went through the harness's own command go out the same way.
+    if init.registered_in_json(init._read_json(home / ".claude.json") or {}) is not None:
+        init._run_or_print(["claude", "mcp", "remove", "--scope", "user", MCP_SERVER], out)
+        did = True
+    codex_home = Path(os.environ.get("CODEX_HOME") or home / ".codex")
+    if init.codex_registered(codex_home / "config.toml") is not None:
+        init._run_or_print(["codex", "mcp", "remove", MCP_SERVER], out)
+        did = True
+    return did
 
 
 def main(argv: list[str] | None = None, *, prog: str = "lore uninstall") -> int:
@@ -43,6 +87,8 @@ def main(argv: list[str] | None = None, *, prog: str = "lore uninstall") -> int:
         except OSError as exc:
             print(f"skipped:   {target} ({exc})", file=sys.stderr)
 
+    removed = _remove_mcp(init._project_root(), sys.stdout) or removed
+
     home = instructions.home()
     if args.yes and home.is_dir():
         shutil.rmtree(home, ignore_errors=True)
@@ -52,7 +98,8 @@ def main(argv: list[str] | None = None, *, prog: str = "lore uninstall") -> int:
         print(f"kept:      {home}  (pass --yes to remove it too)")
 
     if not removed:
-        print("nothing to remove: no block found in any agent's instruction file")
+        print("nothing to remove: no block in any agent's instruction file, no MCP server "
+              "registered")
 
     print("""
 Left alone on purpose:
