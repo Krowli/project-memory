@@ -9,22 +9,26 @@ shape one to one — because that is the shape that was asked for, twice:
 - fresh: a logo, a big "Ask anything…" box, a hint bar with the path, the
   shortcuts and the "model" tag;
 - once commands have run: a transcript — every command echoed like the prompt
-  with its output underneath, exactly what `cli.main` would print — and the
-  field shrunk to the bottom line. `/` (or ctrl+p) opens the command picker;
+  with its output underneath — and the field shrunk to the bottom line. `/` (or
+  ctrl+p) *always* opens a centred command picker with one hint per command;
   `o` opens the top hit of the last search; `↑` walks history.
 
 Commands run in-process through the same `cli.main` the CLI runs, so the output
 and the `exit N` codes are bit-for-bit what an agent would see from the same
-position. `curses` is POSIX and the screen needs a real terminal; where either
-is missing, `--panes` says so and falls back to the line editor, so a pipe
-driving `lore dev --panes` still reads lines.
+position — and then the transcript renders the well-known outputs readably:
+a `search` turn shows one card per hit (slug, title, the matched window dim
+underneath, score and date on the right) instead of the CLI's wrapped prose,
+with the raw bytes still stored on the turn. `curses` is POSIX and the screen
+needs a real terminal; where either is missing, `--panes` says so and falls
+back to the line editor, so a pipe driving `lore dev --panes` still reads lines.
 
 What a key decides is a pure function on `State`, so the bulk of the screen is
 tested the way the line editor is: called directly, no terminal — including the
 session model, which turns a command into a transcript turn. Only the draw loop
 touches curses, and one pty test proves the raw screen draws, runs commands from
-the box, and answers keys. Commands that must own the terminal (`mcp`, the init
-wizard, `edit`) are refused from the field, not half-run.
+the box, opens the picker from a non-empty field, and answers keys. Commands
+that must own the terminal (`mcp`, the init wizard, `edit`) are refused from the
+field, not half-run.
 """
 from __future__ import annotations
 
@@ -44,21 +48,46 @@ except ImportError:  # pragma: no cover — Windows ships no curses
 
 from . import __version__
 from .lib import Page
-from .search import search
+from .search import search, snippet
 
 DEFAULT_K = 15
+# The CLI's own `search -k` default: the card count must equal the count the
+# raw header line promises, so the transcript never shows two different numbers.
+SEARCH_K = 10
 
 # Commands that must own the terminal: a stdio server, a wizard, an editor.
 # They are refused from the field and run outside the panes, not half-run here.
 TERMINAL_COMMANDS = ("mcp", "dev", "edit", "panes")
 
-# The picker, `/` or ctrl+p: every command worth offering, mirroring the CLI's
-# `commands:` line plus the internal ones. Terminal-owning ones stay listed —
-# the refusal message tells you when one is picked.
-PICKER_COMMANDS = (
-    "search show list write edit rm stats init doctor uninstall mcp version dev "
-    "help clear exit"
-).split()
+# The picker, `/` or ctrl+p: every command worth offering, with the one-line
+# hint that makes the menu readable before you know the names by heart.
+PICKER_HINTS: dict[str, str] = {
+    "search": "ranked search over the pages",
+    "show": "one page, by slug",
+    "list": "every page, newest first",
+    "write": "write or amend a page",
+    "edit": "a page in $EDITOR",
+    "rm": "delete one, logged",
+    "stats": "what the store has been doing",
+    "init": "the wizard; --yes to skip it",
+    "doctor": "what has gone silently wrong",
+    "uninstall": "take the memory out",
+    "mcp": "the memory as two MCP tools",
+    "version": "pagelore version",
+    "dev": "the console commands",
+    "help": "the command list",
+    "clear": "clear the transcript",
+    "exit": "leave the screen",
+    "panes": "the screen you are in",
+}
+PICKER_COMMANDS = tuple(PICKER_HINTS)
+
+# Attribute tokens on transcript lines, mapped to curses in the draw loop —
+# so the pure model never imports curses. `ERROR` is a failed run's exit line.
+NORMAL = 0
+BOLD = 1
+DIM = 2
+ERROR = 3
 
 # Block-letter "LORE", centred, five pixels tall — the logo borrowed from the
 # opencode empty state. One terminal row per pixel row, no halves needed.
@@ -75,11 +104,18 @@ LOGO = [
 
 @dataclass
 class Turn:
-    """One command and its captured run, as the transcript shows it."""
+    """One command and its captured run, as the transcript shows it.
+
+    `output` is bit-for-bit what `cli.main` printed, kept so the fidelity checks
+    hold and the raw run can always be rendered. `hits` is the ranked result of
+    a plain `search` (no flags), letting the transcript draw one card per hit
+    instead of the CLI's wrapped prose.
+    """
 
     cmd: str
     rc: int
     output: str
+    hits: list[tuple[float, Page]] | None = None
 
 
 @dataclass
@@ -130,6 +166,24 @@ def picker_items(state: State) -> list[str]:
     """The picker's list, narrowed by the text typed since `/`."""
     query = state.field
     return [c for c in PICKER_COMMANDS if c.startswith(query)]
+
+
+def picker_window(state: State, limit: int) -> tuple[list[str], int, int, bool, bool]:
+    """The slice of the picker to draw, with the cursor row inside it.
+
+    The window slides so the cursor is always visible; `limit` is the most rows
+    the panel fits. Returns (shown, cursor row, total, has more above, has more
+    below) — pure, so the menu has a test without a terminal.
+    """
+    items = picker_items(state)
+    if not items:
+        return [], 0, 0, False, False
+    idx = state.picker_idx % len(items)
+    if limit <= 0:
+        return items, idx % len(items), len(items), False, False
+    start = max(0, min(idx - limit + 1, len(items) - limit))
+    shown = items[start:start + limit]
+    return shown, idx - start, len(items), start > 0, start + len(shown) < len(items)
 
 
 def picker_fill(state: State) -> None:
@@ -226,25 +280,28 @@ def submit(state: State, store: Path, *, cwd: Path,
            sandbox: Path | None = None, home: Path | None = None) -> bool:
     """Enter on the field: run the command, append the turn, reset the field.
 
-    A `search` also remembers its hits, so `o` can open the top one without the
+    A plain `search` (query, no flags) also remembers its ranked hits, so the
+    transcript can draw them as cards and `o` can open the top one without the
     slug ever being retyped.
     """
     cmd = state.field.strip()
     if not cmd:
         return False
     rc, text = run_command(state, store, cwd=cwd, sandbox=sandbox, home=home)
-    state.turns.append(Turn(cmd=cmd, rc=rc, output=text))
+    name, _, rest = cmd.partition(" ")
+    ranked: list[tuple[float, Page]] = []
+    if name == "search" and rest.strip() and not rest.strip().startswith("-"):
+        ranked = search(rest.strip(), store, k=SEARCH_K)
+        state.hits = [page for _, page in ranked]
+    else:
+        state.hits = []
+    state.turns.append(Turn(cmd=cmd, rc=rc, output=text, hits=ranked or None))
     state.field, state.cursor = "", 0
     state.picker = False
     state.follow = True
     if not state.history or state.history[-1] != cmd:
         state.history.append(cmd)
     state.hist_idx = None
-    name, _, rest = cmd.partition(" ")
-    if name == "search":
-        state.hits = query_rows(store, rest.strip())
-    elif name in ("list", "show"):
-        state.hits = []
     return True
 
 
@@ -279,15 +336,50 @@ def wrap(text: str, width: int) -> list[str]:
     return lines
 
 
-def render_turn(turn: Turn, width: int) -> list[str]:
-    """A turn as transcript lines: the echo, the output, the exit, a blank."""
-    lines = [f"lore > {turn.cmd}"]
-    body = turn.output.rstrip("\n")
-    if body:
-        lines += wrap(body, width)
+def _search_cards(turn: Turn, width: int) -> list[tuple[int, str]] | None:
+    """A plain `search` turn as cards: one line per hit with its matched window
+    dim underneath, instead of the CLI's wrapped prose.
+
+    The raw output's first line (the count) and its trailing `skipped`
+    warnings are kept; the per-hit lines themselves are replaced by the cards.
+    """
+    if not turn.hits:
+        return None
+    raw = turn.output.splitlines()
+    header = raw[0] if raw else f"{len(turn.hits)} hit(s)"
+    lines: list[tuple[int, str]] = [(NORMAL, ln) for ln in wrap(header, width)]
+    query = turn.cmd.partition(" ")[2].strip()
+    n = len(turn.hits)
+    num_w = len(str(n))
+    slug_w = min(22, max(10, max((len(p.slug) for _, p in turn.hits), default=10) + 2))
+    tail_w = max((len(f"[{s:.1f}] {p.updated}") for s, p in turn.hits), default=0)
+    for i, (score, page) in enumerate(turn.hits):
+        title_w = max(8, width - 6 - num_w - 2 - slug_w - 2 - tail_w)
+        head = (f"  {i + 1:>{num_w}}.  {_truncate(page.slug, slug_w):<{slug_w}}"
+                f"  {_truncate(page.title, title_w)}")
+        tail = f"[{score:.1f}] {page.updated}"
+        need = len(head) + 1 + len(tail)
+        card = head + " " * max(1, width - need) + tail if need <= width else _truncate(head, width)
+        lines.append((NORMAL, card))
+        for wl in wrap(snippet(page, width=max(8, width - 6), query=query), width - 5):
+            lines.append((DIM, "    " + wl))
+    for ln in raw[1:]:
+        if ln.strip().startswith("skipped "):
+            lines += [(NORMAL, wl) for wl in wrap(ln, width)]
+    return lines
+
+
+def render_turn(turn: Turn, width: int) -> list[tuple[int, str]]:
+    """A turn as transcript lines with attribute tokens: echo, output, exit."""
+    lines: list[tuple[int, str]] = [(BOLD, f"lore > {turn.cmd}")]
+    cards = _search_cards(turn, width)
+    if cards is not None:
+        lines += cards
+    elif turn.output.rstrip("\n"):
+        lines += [(NORMAL, ln) for ln in wrap(turn.output.rstrip("\n"), width)]
     if turn.rc:
-        lines.append(f"exit {turn.rc}")
-    lines.append("")
+        lines.append((ERROR, f"exit {turn.rc}"))
+    lines.append((NORMAL, ""))
     return lines
 
 
@@ -353,17 +445,80 @@ def _logo_origin(rows: int, cols: int) -> int:
     return 1 if rows < 24 else (rows - 14) // 2
 
 
-def _draw_picker(stdscr, state: State, *, top: int, width: int,
-                 limit: int = 8) -> None:
-    """The `/` picker as an overlay: the commands, narrowed by the filter text."""
-    items = picker_items(state)
-    if not items:
+def _attr(token: int) -> int:
+    """The curses attribute for a transcript token."""
+    if token == BOLD:
+        return curses.A_BOLD
+    if token == DIM:
+        return curses.A_DIM
+    if token == ERROR:
+        if curses.has_colors():
+            return curses.color_pair(1) | curses.A_BOLD
+        return curses.A_BOLD
+    return curses.A_NORMAL
+
+
+def _draw_picker(stdscr, state: State, rows: int, cols: int, *,
+                 top: int | None = None, bottom: bool = False) -> None:
+    """The `/` picker: a bordered, centred panel of commands with hints.
+
+    `bottom` pins it above the bottom input line (chat state); `top` anchors it
+    below the ask box (empty state). A panel that would not fit its anchor falls
+    back to true centring. The window slides so the highlighted row is always
+    visible.
+    """
+    shown, cur, _total, above, below = picker_window(state, 8)
+    panel_w = min(60, cols - 6)
+    empty = not shown
+    if not empty:
+        bodys = len(shown)
+        footer = 1 if (above or below) else 0
+        panel_h = 3 + bodys + footer
+    else:
+        panel_h = 4
+    if panel_h > rows - 2:
+        return  # no room even centred: skip rather than draw off-screen
+    if bottom:
+        top = rows - 1 - panel_h
+    elif top is not None and top + panel_h > rows - 1:
+        top = (rows - panel_h) // 2
+    elif top is None:
+        top = (rows - panel_h) // 2
+    x = (cols - panel_w) // 2
+    edge = "─" * (panel_w - 2)
+    # Blank the panel's rectangle first: a modal menu must hide what sits behind
+    # it, or the logo and transcript leak around the borders. The next full
+    # redraw repaints the covered content when the picker closes.
+    for blank_y in range(top, top + panel_h):
+        stdscr.addstr(blank_y, x, " " * panel_w)
+    stdscr.addstr(top, x, "╭" + edge + "╮")
+    if empty:
+        stdscr.addstr(top + 1, x, "│" + " " * (panel_w - 2) + "│")
+        caption = f"commands — nothing matches {state.field!r}"
+        stdscr.addstr(top + 1, x + 2, _truncate(caption, panel_w - 4), curses.A_DIM)
+        stdscr.addstr(top + 2, x, "│" + " " * (panel_w - 2) + "│")
+        stdscr.addstr(top + 2, x + 2, "Esc clears the filter", curses.A_DIM)
+        stdscr.addstr(top + 3, x, "╰" + edge + "╯")
         return
-    shown = items[: max(1, limit)]
-    stdscr.addstr(top, 1, "commands — type to filter:", curses.A_DIM)
-    for i, item in enumerate(shown):
-        attr = curses.A_REVERSE if i == state.picker_idx else curses.A_NORMAL
-        stdscr.addstr(top + 1 + i, 2, _truncate(f"  {item}", width), attr)
+    stdscr.addstr(top + 1, x, "│" + " " * (panel_w - 2) + "│")
+    stdscr.addstr(top + 1, x + 2, "commands — type to filter:",
+                  curses.A_DIM)
+    name_w = max((len(name) for name in shown), default=1)
+    for row, name in enumerate(shown):
+        label = f"  {name:<{name_w}}   {PICKER_HINTS.get(name, '')}"
+        attr = curses.A_REVERSE if row == cur else curses.A_NORMAL
+        stdscr.addstr(top + 2 + row, x, "│")
+        stdscr.addstr(top + 2 + row, x + 1, _truncate(label, panel_w - 2), attr)
+        stdscr.addstr(top + 2 + row, x + panel_w - 1, "│")
+    if footer:
+        foot_row = top + 2 + bodys
+        side = ("above and below" if above and below
+                else "below" if below else "above")
+        foot = f"j/k move the cursor — more commands {side}"
+        stdscr.addstr(foot_row, x, "│")
+        stdscr.addstr(foot_row, x + 1, _truncate(foot, panel_w - 2), curses.A_DIM)
+        stdscr.addstr(foot_row, x + panel_w - 1, "│")
+    stdscr.addstr(top + 2 + bodys + footer, x, "╰" + edge + "╯")
 
 
 def _draw_ask(stdscr, store: Path, state: State, rows: int, cols: int) -> None:
@@ -392,34 +547,31 @@ def _draw_ask(stdscr, store: Path, state: State, rows: int, cols: int) -> None:
     prompt = f"lore > {state.field}"
     stdscr.addstr(box_y + 2, box_x + 2, _truncate(prompt, box_w - 4))
     stdscr.move(box_y + 2, min(box_x + box_w - 3, box_x + 2 + len("lore > ") + state.cursor))
+    keys = "/ commands · o opens the top hit · ↑ history · q quit"
+    stdscr.addstr(box_y + 3, box_x + 2, _truncate(keys, box_w - 4), curses.A_DIM)
 
     hint = (f"{_truncate(str(store), 30)}   ·   ↑ history · / commands · o top hit · q quit"
             f"   lore · pagelore {__version__}")
     stdscr.addstr(rows - 1, 0, _truncate(hint, cols - 1), curses.A_DIM)
 
-    if state.picker and box_y + box_h + 1 <= rows - 3:
-        _draw_picker(stdscr, state, top=box_y + box_h + 1,
-                     width=box_w - 4, limit=min(8, rows - (box_y + box_h + 1) - 2))
+    if state.picker:
+        _draw_picker(stdscr, state, rows, cols, top=box_y + box_h + 2)
 
 
 def _draw_chat(stdscr, state: State, rows: int, cols: int) -> None:
     """The working state: transcript above, the field as the bottom line."""
     height = rows - 1
     width = max(10, cols - 2)
-    lines: list[tuple[str, bool]] = []  # (text, is the command echo)
+    lines: list[tuple[int, str]] = []
     for turn in state.turns:
-        rendered = render_turn(turn, width)
-        for i, line in enumerate(rendered):
-            lines.append((line, i == 0))
+        lines += render_turn(turn, width)
     total = len(lines)
     clamp_view(state, total, height)
-    for i, (line, echo) in enumerate(lines[state.view_top:state.view_top + height]):
-        attr = curses.A_BOLD if echo else curses.A_NORMAL
-        stdscr.addstr(i, 1, _truncate(line, width), attr)
+    for i, (token, line) in enumerate(lines[state.view_top:state.view_top + height]):
+        stdscr.addstr(i, 1, _truncate(line, width), _attr(token))
 
     if state.picker:
-        _draw_picker(stdscr, state, top=rows - 2 - min(8, len(picker_items(state))),
-                     width=width)
+        _draw_picker(stdscr, state, rows, cols, bottom=True)
 
     prompt = f"lore > {state.field}"
     stdscr.addstr(rows - 1, 0, _truncate(prompt, cols - 1))
@@ -446,6 +598,18 @@ def _draw(stdscr, store: Path, state: State) -> None:
 def _main(stdscr, store: Path, *, prog: str, cwd: Path,
           sandbox: Path | None, home: Path | None) -> None:  # pragma: no cover
     """The screen itself: read a key, decide, redraw. `q` is back to the editor."""
+    try:
+        if curses.has_colors():
+            curses.start_color()
+            curses.init_pair(1, curses.COLOR_RED, -1)
+    except curses.error:
+        pass
+    # Esc as a bare key must land fast, or curses waits ~1s for a possible
+    # escape sequence after it and swallows the first key typed next.
+    try:
+        curses.set_escdelay(50)
+    except (AttributeError, curses.error):
+        pass
     state = State()
     while True:
         _draw(stdscr, store, state)
@@ -485,13 +649,8 @@ def _main(stdscr, store: Path, *, prog: str, cwd: Path,
             field_cursor(state, -1)
         elif key == curses.KEY_RIGHT:
             field_cursor(state, 1)
-        elif key == 16:  # ctrl+p: the command picker, always
+        elif key in (16, ord("/")):  # ctrl+p or `/`: the command picker, always
             open_picker(state)
-        elif key == ord("/"):
-            if not state.field:
-                open_picker(state)
-            else:
-                field_insert(state, "/")
         elif key in (ord("\n"), 10, 13):
             submit(state, store, cwd=cwd, sandbox=sandbox, home=home)
         elif key == ord("o"):

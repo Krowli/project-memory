@@ -67,6 +67,14 @@ def _run_field(command: str, store: Path, monkeypatch, tmp_path) -> tuple[panes.
     return st, rc, text
 
 
+def _run_turn(command: str, store: Path, monkeypatch, tmp_path) -> panes.Turn:
+    """Enter a command the way the screen would and return the appended turn."""
+    _in_project(monkeypatch, tmp_path, store)
+    st = _session(command)
+    panes.submit(st, store, cwd=store.parent)
+    return st.turns[-1]
+
+
 def test_query_rows_are_the_cli_ranking(store):
     hits = [p.slug for p in panes.query_rows(store, "zeta")]
     assert hits == ["zeta-page"]
@@ -214,11 +222,83 @@ def test_render_turn_echoes_the_command_then_output_then_exit():
         cmd="nonsense", rc=2,
         output="lore: unknown command 'nonsense'\nFIX: lore search 'nonsense'")
     lines = panes.render_turn(turn, 50)
-    assert lines[0] == "lore > nonsense", "the echo reads like the prompt"
-    assert lines[-2] == "exit 2"
-    assert lines[-1] == ""
-    non_blank = [ln for ln in lines if ln]
+    assert lines[0] == (panes.BOLD, "lore > nonsense"), "the echo reads like the prompt"
+    assert lines[-2] == (panes.ERROR, "exit 2"), "a failed run's exit stands out"
+    assert lines[-1] == (panes.NORMAL, "")
+    non_blank = [ln for tok, ln in lines if ln]
     assert non_blank[1].startswith("lore: unknown"), "the output follows the echo"
+
+
+def test_render_turn_search_renders_hits_as_cards(store, monkeypatch, tmp_path):
+    """A plain `search` turn draws one card per hit — slug and title on the
+    line, the matched window dim underneath, score and date on the right —
+    instead of the CLI's wrapped prose, and nothing exceeds the width."""
+    turn = _run_turn("search zeta", store, monkeypatch, tmp_path)
+    assert turn.hits, "the turn carries the ranked hits for the cards"
+    lines = panes.render_turn(turn, 60)
+    assert lines[0] == (panes.BOLD, "lore > search zeta")
+    assert lines[1][0] == panes.NORMAL and "hit(s) in" in lines[1][1]
+    assert "zeta-page" in lines[1][1] + "".join(ln for tok, ln in lines), \
+        "the count header names the store, so the pty token survives"
+    cards = [(tok, ln) for tok, ln in lines if "zeta-page" in ln]
+    assert cards and cards[0][0] == panes.NORMAL
+    assert any(tok == panes.DIM and ln.strip() for tok, ln in lines), \
+        "the matched window is dim underneath the card"
+    assert any("[" in ln and "2026-09-20" in ln for tok, ln in lines), \
+        "score and date ride on the right of a card"
+    for tok, ln in lines:
+        assert len(ln) <= 60 or " " not in ln.strip(), \
+            (tok, ln, "only an unbreakable token (a store path) may exceed the width")
+    assert lines[-1] == (panes.NORMAL, "")
+
+
+def test_render_turn_search_with_flags_stays_raw(store, monkeypatch, tmp_path):
+    """Flagged searches keep the byte-for-byte CLI text: the pretty cards only
+    replace plain-query searches, so the readback is never silently re-ranked."""
+    turn = _run_turn("search --touching src/a.py zeta", store, monkeypatch, tmp_path)
+    assert turn.hits is None
+    lines = panes.render_turn(turn, 60)
+    assert lines[1][0] == panes.NORMAL and "hit(s) in" in lines[1][1]
+    assert not any(tok == panes.DIM for tok, ln in lines[2:]), \
+        "no card rendering for a flagged search"
+
+
+def test_search_cards_keep_the_skipped_warning(store):
+    """The stderr warning about short unsearchable pages is not swallowed by
+    the card rendering."""
+    page = panes.query_rows(store, "zeta")[0]
+    turn = panes.Turn(cmd="search zeta", rc=0,
+                      output="1 hit(s) in /tmp/.memory\nzeta-page  —  zeta page title  —  x\n"
+                             "skipped 2 page(s) under 200 chars, which `lore write` "
+                             "would refuse: short-one — rewrite them",
+                      hits=[(0.4, page)])
+    lines = panes.render_turn(turn, 60)
+    assert any("skipped 2 page(s)" in ln for tok, ln in lines), \
+        "the warning survives the pretty rendering"
+
+
+def test_picker_hints_cover_every_command():
+    assert set(panes.PICKER_HINTS) == set(panes.PICKER_COMMANDS), \
+        "no command in the menu is left without a hint"
+    assert panes.PICKER_COMMANDS.count("search") == 1
+
+
+def test_picker_window_scrolls_the_cursor_into_view():
+    """The picker is taller than the panel: the window slides so the cursor is
+    always on screen, and the panel says when more commands exist above/below."""
+    st = panes.State()
+    panes.open_picker(st)
+    assert len(panes.picker_items(st)) > 8, "the full menu should overflow a window of 8"
+    shown, cur, total, above, below = panes.picker_window(st, 8)
+    assert shown == list(panes.PICKER_COMMANDS[:8]) and cur == 0
+    assert total == len(panes.PICKER_COMMANDS) and below and not above
+    st.picker_idx = 12
+    shown, cur, total, above, below = panes.picker_window(st, 8)
+    assert shown[0] == panes.PICKER_COMMANDS[5], "the window slides to keep the cursor visible"
+    assert cur == 7 and above and below
+    st.picker_idx = 16
+    shown, cur, total, above, below = panes.picker_window(st, 8)
+    assert shown[-1] == panes.PICKER_COMMANDS[-1] and cur == 7 and above and not below
 
 
 def test_wrap_never_exceeds_the_width(store):
@@ -251,8 +331,9 @@ def test_transcript_follows_the_bottom_and_scrolls_back():
 @conftest.needs_posix
 def test_the_screen_draws_like_opencode_and_runs_commands(store, tmp_path):
     """Raw-screen proof: the ask box draws, a command typed into it runs
-    in-process and paints its turn, `o` opens the top hit of the last search,
-    `q` is back to the line editor, and the whole thing exits 0."""
+    in-process and paints its turn, `/` opens the picker even with text in the
+    field, `o` opens the top hit of the last search, `q` is back to the line
+    editor, and the whole thing exits 0."""
     import fcntl
     import pty
     import select
@@ -305,6 +386,12 @@ def test_the_screen_draws_like_opencode_and_runs_commands(store, tmp_path):
         # a search run makes `o` able to open the top hit without the slug
         os.write(fd, b"search zeta\r")
         assert wait_for(b"hit(s) in"), f"search did not run\n{seen[-400:]!r}"
+        # `/` with text already in the field must still open the picker — it
+        # once no-op'd into a literal slash; Esc closes the menu and clears
+        os.write(fd, b"x/")
+        assert wait_for(b"nothing matches"), \
+            f"`/` with text showed no picker\n{seen[-400:]!r}"
+        os.write(fd, b"\x1b")
         os.write(fd, b"o")
         assert wait_for(b"slug: zeta-page"), f"`o` did not open the top hit\n{seen[-400:]!r}"
         # a command that owns the terminal is refused from the field, not half-run

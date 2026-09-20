@@ -40,18 +40,24 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hint bar with the store, the shortcuts and the "model" tag. Once a command has
   run it becomes a transcript — every command echoed like the prompt, its output
   underneath, exactly what `cli.main` prints — and the field shrinks to the
-  bottom line. `/` (or ctrl+p) opens a command picker that fills the command
-  word, `o` opens the top hit of the last search (the slug is never retyped),
+  bottom line. `/` (or ctrl+p) *always* opens a centred command picker — one
+  hint per command, a filter, j/k and ↑/↓ — even when the field is not empty,
+  `o` opens the top hit of the last search (the slug is never retyped),
   `↑` walks history, PgUp/PgDn scroll the transcript, `q` is back to the line
-  editor. Commands that must own the terminal (the MCP server, the init wizard,
-  `edit`) are refused from the field rather than half-run. It is opt in
-  (`--panes`, or the internal `panes` command) and the line editor stays the
-  default, so the bare-`lore` probe contract never sees it. What a key decides
-  is a pure function on the screen model, tested the way the line editor is —
-  called directly, and one pty test proves the raw screen draws the ask box,
-  runs commands, and answers `/` and `o`. `curses` is POSIX and the screen
-  needs a real terminal; where either is missing it says so and falls back to
-  the line editor, so a pipe driving `lore dev --panes` still reads lines.
+  editor. Transcripts of a plain `search` render readably, not as the CLI's
+  wrapped prose: one card per hit, slug and title on the line with the score
+  and date right-aligned, and the matched window dim underneath — the raw bytes
+  are still stored on the turn, so a flagged search falls straight back to the
+  byte-for-byte text. Commands that must own the terminal (the MCP server, the
+  init wizard, `edit`) are refused from the field rather than half-run. It is
+  opt in (`--panes`, or the internal `panes` command) and the line editor stays
+  the default, so the bare-`lore` probe contract never sees it. What a key
+  decides is a pure function on the screen model, tested the way the line
+  editor is — called directly, and one pty test proves the raw screen draws the
+  ask box, runs commands, opens the picker from a non-empty field, and answers
+  `o`. `curses` is POSIX and the screen needs a real terminal; where either is
+  missing it says so and falls back to the line editor, so a pipe driving
+  `lore dev --panes` still reads lines.
   Measured (`evals/panes_keystrokes.py`, `make eval-panes`): find + read one
   page costs `len(slug) + 7` fewer keystrokes and two fewer process spawns than
   the CLI's `search` + `show` round trip; every other command from the field
