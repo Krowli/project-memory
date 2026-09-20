@@ -26,7 +26,7 @@ from pathlib import Path
 
 from . import __version__
 
-COMMANDS = ("search", "write", "stats", "init", "doctor", "uninstall")
+COMMANDS = ("search", "write", "stats", "init", "doctor", "uninstall", "mcp")
 
 # The two console scripts this package installs. `lore` is the documented name;
 # `project-memory` is the escape hatch for a machine where something else already
@@ -99,6 +99,7 @@ def usage(prog: str = "lore") -> str:
         f"  {prog} init                                         connect an agent to it",
         f"  {prog} doctor                                       check this install",
         f"  {prog} uninstall                                    disconnect it again",
+        f"  {prog} mcp                                          the same memory as MCP tools",
         "",
         f"{prog} <command> --help for the flags of one command.",
     ] + ([] if connected else [
