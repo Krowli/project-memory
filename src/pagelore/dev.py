@@ -39,7 +39,7 @@ from . import __version__
 from .lib import STORE_DIRNAME, find_store
 
 COMMANDS_HINT = "search show list write edit rm stats init doctor uninstall mcp version dev"
-INTERNAL = ("help", "clear", "exit")
+INTERNAL = ("help", "clear", "panes", "exit")
 
 
 def console_here() -> bool:
@@ -55,8 +55,9 @@ def dev_help(prog: str = "lore dev") -> str:
         f"{prog} — pagelore {__version__}, the same commands in a console",
         "",
         f"every line is one command: {COMMANDS_HINT}",
-        "internal: help · clear · exit",
+        f"internal: {' · '.join(INTERNAL)}",
         "flags:    --sandbox  run against a throwaway store, discarded on exit",
+        "          --panes    open the two-pane browse screen (search, open, quit back here)",
         "write:    put a long body in quotes — `—body \"…\"`; the 200-character",
         "          floor still applies, and the refusal tells you so with a FIX: line",
     ])
@@ -122,15 +123,31 @@ def run_line(line: str, cwd: Path, sandbox: Path | None, home: Path | None) -> N
     print()
 
 
+def _open_panes(store: Path, prog: str) -> None:
+    """Open the two-pane browse screen; `q` lands back here in the line editor.
+
+    Bounded, because the screen never runs unless the terminal can host it — and
+    the one thing it cannot do is change how a bare `lore` answers a probe.
+    """
+    from . import panes
+    try:
+        panes.run_guarded(store, prog=f"{prog} --panes")
+    except KeyboardInterrupt:
+        pass  # back to the line editor, which owns the ^C handling
+
+
 def main(argv: list[str] | None = None, prog: str = "lore dev") -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     sandbox = False
+    panes = False
     for a in argv:
         if a in ("-h", "--help"):
             print(dev_help(prog))
             return 0
         if a == "--sandbox":
             sandbox = True
+        elif a == "--panes":
+            panes = True
         else:
             print(f"lore dev: unknown option {a!r}", file=sys.stderr)
             return 2
@@ -155,6 +172,8 @@ def main(argv: list[str] | None = None, prog: str = "lore dev") -> int:
 
     print(banner(store, sandbox_dir, prog))
     try:
+        if panes:
+            _open_panes(store, prog)
         while True:
             try:
                 try:
@@ -173,6 +192,9 @@ def main(argv: list[str] | None = None, prog: str = "lore dev") -> int:
             if line in ("help", "?"):
                 print(dev_help(prog))
                 print()
+                continue
+            if line == "panes":
+                _open_panes(store, prog)
                 continue
             if line == "clear":
                 print("\x1b[2J\x1b[H" if console_here() else "\n" * 2, end="")

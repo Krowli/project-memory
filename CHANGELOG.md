@@ -35,6 +35,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   can be rehearsed and then discarded. Anywhere that is not a terminal a bare
   `lore` still prints usage and exits 0, which is the contract an agent probe leans
   on.
+- **`lore dev --panes`, a two-pane browse screen behind a flag.** The left pane
+  lists the store exactly like `lore list`, or narrowed by the same ranked search
+  the CLI runs; Enter opens the page on the right; `q` is back to the line
+  editor. It is opt in (`--panes`, or the internal `panes` command) and the line
+  editor stays the default, so the bare-`lore` probe contract never sees it.
+  What a key decides is a pure function on the screen model, tested the way the
+  line editor is — called directly, and one pty test proves the raw screen.
+  `curses` is POSIX and the screen needs a real terminal; where either is missing
+  it says so and falls back to the line editor, so a pipe driving `lore dev
+  --panes` still reads lines. Measured (`evals/panes_keystrokes.py`, `make
+  eval-panes`): find + read one page costs `len(slug) + 10` fewer keystrokes and
+  two fewer process spawns than the CLI's `search` + `show` round trip.
 - **A local release rehearsal.** `tools/smoke.sh` (a `make smoke` away) builds the
   wheel, installs it into an isolated environment, and runs the same end-to-end
   steps CI's install-smoke runs — including the MCP route — against a throwaway

@@ -75,6 +75,16 @@ def test_quit_and_help(project):
     assert "every line is one command" in text
 
 
+def test_panes_falls_back_to_the_line_editor_without_a_tty(project):
+    """`--panes` is a screen, not a gate: piped in, it says so and the console
+    still reads lines — an agent that drives `lore dev` must not lose it."""
+    proc = run_dev(["dev", "--panes"], project, b"help\nexit\n")
+    assert proc.returncode == 0
+    text = (proc.stdout + proc.stderr).decode("utf-8", "replace")
+    assert "two-pane screen needs a real terminal" in text
+    assert "every line is one command" in text, "the line editor still ran"
+
+
 def test_sandbox_never_touches_the_real_store_or_home(tmp_path):
     project = tmp_path / "project"
     (project / ".memory").mkdir(parents=True)

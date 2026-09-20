@@ -10,7 +10,7 @@
 PYTHON ?= python3
 VENV := .venv
 
-.PHONY: dev test lint smoke clean
+.PHONY: dev test lint smoke eval-panes clean
 
 dev:
 	$(PYTHON) -m venv $(VENV)
@@ -31,6 +31,11 @@ lint:
 
 smoke:
 	PYTHON="$(abspath $(VENV)/bin/python)" bash tools/smoke.sh
+
+# The panes experiment's number: find + read a page against this store, in
+# keystrokes, CLI round trip versus the two-pane screen.
+eval-panes:
+	PYTHONPATH=src $(VENV)/bin/python evals/panes_keystrokes.py
 
 clean:
 	rm -rf $(VENV) .pytest_cache .ruff_cache
