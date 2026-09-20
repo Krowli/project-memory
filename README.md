@@ -145,7 +145,10 @@ pipx upgrade pagelore          # or: npm update -g pagelore
 
 The instruction block is refreshed by the next `lore` command you or your agent
 runs, so there is nothing to re-copy. A pasted copy is the exception, and is why
-`lore doctor` exists.
+`lore doctor` exists. The same check names a shadowing install: when the `lore`
+on PATH is not the one running, `lore doctor` fails and says which one PATH picks
+instead of printing both paths and passing — a harness reaches for the first
+`lore` it can start, so with two installs the version under test is a coin flip.
 
 ### Removing it
 

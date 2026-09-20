@@ -50,6 +50,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`lore doctor` sees an MCP registration**, checks the command it names is on PATH,
   and proves the server the harness will run answers `tools/list` with the two tools
   — an old install earlier on PATH fails there and says which one.
+- **`lore doctor` names a shadowing install.** When the `lore` on PATH is a
+  different install than the one running, the `command` check fails and says which
+  one PATH picks, reading the answer out of `--version` — the two-lores trap the
+  smoke rehearsal exposed. A binary that will not answer `--version` is reported
+  as the old-build case of the same fault.
 - **`lore uninstall` takes the MCP entry back out** of `.mcp.json` and `settings.json`,
   deletes a `.mcp.json` it emptied, and runs or prints `claude mcp remove` /
   `codex mcp remove` for the files it does not edit by hand.

@@ -411,6 +411,46 @@ def test_doctor_reports_a_server_that_does_not_answer(machine, monkeypatch):
     assert "boom" in rows["mcp:handshake"]["detail"]
 
 
+def test_doctor_flags_a_lore_on_path_that_is_not_this_install(machine, monkeypatch):
+    """Two installs, and PATH picks the wrong one: `--version` says where each one
+    lives, which is the only honest comparison — `which` cannot see through a pipx
+    shim or an npm copy."""
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: "/elsewhere/bin/lore")
+    monkeypatch.setattr(doctor.subprocess, "run", lambda argv, *a, **k:
+                        subprocess.CompletedProcess(
+                            argv, 0, "pagelore 9.9.9 (lore, python 3,"
+                                     " /elsewhere/install/pagelore)", ""))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["command"]["ok"] is False
+    assert "different install" in rows["command"]["detail"]
+    assert "/elsewhere/install/pagelore" in rows["command"]["detail"]
+
+
+def test_doctor_accepts_a_command_that_is_this_install(machine, monkeypatch):
+    """The parse stays honest to the real version line, so the match probe is fed
+    `version_line` itself — a drift in the format fails here, not in the field."""
+    from pagelore.cli import version_line
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: "/same/bin/lore")
+    monkeypatch.setattr(doctor.subprocess, "run", lambda argv, *a, **k:
+                        subprocess.CompletedProcess(argv, 0, version_line("lore"), ""))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["command"]["ok"] is True
+    assert "this install" in rows["command"]["detail"]
+
+
+def test_doctor_flags_a_command_that_will_not_answer_version(machine, monkeypatch):
+    """The old-build case of the trap: no `--version`, and the harness would still
+    start that `lore` for the handshake and get whatever an old server says."""
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: "/elsewhere/bin/lore")
+    monkeypatch.setattr(doctor.subprocess, "run", lambda argv, *a, **k:
+                        subprocess.CompletedProcess(
+                            argv, 2, "", "usage: lore: error: unrecognized arguments:"
+                                         " --version"))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["command"]["ok"] is False
+    assert "does not answer --version" in rows["command"]["detail"]
+
+
 def test_the_real_handshake_lists_the_two_tools(machine, monkeypatch):
     """`machine` is load-bearing here: its NO_REFRESH and PROJECT_MEMORY_HOME reach
     the child, or the router's housekeeping after `lore mcp` exits would rewrite the

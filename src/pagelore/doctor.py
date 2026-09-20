@@ -17,6 +17,10 @@ exists:
   name is not on PATH the server never comes up, and a harness reports that quietly
   or not at all. And a server that starts must answer `tools/list` with the two
   tools — checked by running the very binary the config names, not this install.
+- **A shadowing install.** The `lore` a harness starts is the one its PATH names,
+  which may not be the one running this doctor; `--version` prints where each
+  install lives, so the version probe *is* the comparison, and a binary that will
+  not answer it is the old-build case of the same fault.
 
 It also names the leftovers of the pre-0.4.0 layout, which nothing else will.
 """
@@ -95,6 +99,38 @@ def _handshake(argv: list[str], timeout: float = 10) -> tuple[bool, str]:
     said = proc.stderr.strip().splitlines()
     why = said[0] if said else f"tools/list answered {sorted(n for n in names if n) or 'nothing'}"
     return False, (f"exit {proc.returncode}; " if proc.returncode else "") + why
+
+
+def _same_install(command: str, here: str) -> tuple[bool, str]:
+    """Is the `lore` on PATH this very install?
+
+    The probe runs the binary it found, because only that binary can say where it
+    lives: `--version` prints the source directory that install was built from.
+    Comparing that with this file's directory catches a shadowing install that
+    would otherwise sit silently earlier on PATH. A binary that will not answer,
+    an old build with no `--version`, is itself the finding: a harness will start
+    `lore mcp` from PATH anyway, and its handshake fails the way it did before
+    this check existed.
+    """
+    try:
+        proc = subprocess.run([command, "--version"], capture_output=True,
+                              text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"{command} will not answer --version ({type(exc).__name__})"
+    if proc.returncode != 0:
+        note = (proc.stderr or proc.stdout or "").strip().splitlines()
+        detail = f"{command} does not answer --version"
+        if note:
+            detail += f": {note[0]}"
+        return False, detail
+    match = re.search(r", ([^,)]+)\)$", (proc.stdout or "").strip())
+    theirs = match.group(1) if match else None
+    if theirs != here:
+        theirs_note = theirs or "prints no install directory"
+        return False, (f"{command} is a different install ({theirs_note}), not this one"
+                       f" ({here}); a harness starts that one and its MCP handshake can"
+                       " differ — put this install first on PATH")
+    return True, f"{command} (this install: {here})"
 
 
 def findings() -> list[dict]:
@@ -179,9 +215,12 @@ def findings() -> list[dict]:
 
     command = shutil.which("lore") or shutil.which("pagelore")
     here = str(Path(__file__).resolve().parent)
-    out.append({"check": "command", "ok": bool(command),
-                "detail": f"{command} (this install: {here})" if command
-                          else "neither `lore` nor `pagelore` is on PATH"})
+    if command is None:
+        out.append({"check": "command", "ok": False,
+                    "detail": "neither `lore` nor `pagelore` is on PATH"})
+    else:
+        ok, detail = _same_install(command, here)
+        out.append({"check": "command", "ok": ok, "detail": detail})
 
     if LEGACY_SKILL.exists():
         out.append({"check": "legacy", "ok": False,
