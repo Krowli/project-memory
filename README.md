@@ -204,7 +204,7 @@ lore edit webgl-context-loss                         # in $EDITOR; warns if the 
 lore rm webgl-context-loss                           # delete one, logged
 lore stats --since 2026-09-01                        # what the store has been doing
 lore dev                                             # the same commands in a console (bare `lore` too); --sandbox rehearses on a throwaway store
-lore dev --panes                                      # a two-pane browse screen: list or ranked search on the left, a page on the right, q back to `lore dev`
+lore dev --panes                                     # the opencode-shaped screen: ask box, a transcript of commands run in-process, / commands, o opens the top hit, q back to `lore dev`
 ```
 
 A bare `lore` prints the command list and exits 0, because an agent checking
@@ -530,7 +530,7 @@ src/pagelore/              the program
   init.py doctor.py        the wizard, and the detector for what has gone silently wrong
   mcp.py                   the same memory as two MCP tools over stdio, when chosen
   dev.py                   the console: the same commands, --sandbox on a throwaway store
-  panes.py                 the two-pane browse screen behind --panes: a pure model, curses only for drawing
+  panes.py                 the opencode-shaped screen behind --panes: ask box and transcript, / picker, a pure model with curses only for drawing
   instructions.py          renders and refreshes the block an agent reads every turn
   data/AGENT.md            that block — the measured 15/15 text
 npm/                       the Node route: a shim, plus src/pagelore vendored at pack time
@@ -586,7 +586,9 @@ bash tools/smoke.sh   # or: make smoke. Build the wheel, install it in an
 .venv/bin/lore dev    # the same commands in a console; --sandbox rehearses them
                   # against a throwaway store and a fake HOME. A bare `lore` on
                   # a real terminal opens the same console. `--panes` swaps the
-                  # prompt for a two-pane browse screen (search, open, q back).
+                  # prompt for an opencode-shaped screen: ask a question or type
+                  # a command, watch it run in-process in the transcript, `/` for
+                  # the command picker, `o` to open the top hit (q back).
 ```
 
 **No proposal lands without a number from `evals/` or a failing test it fixes.**

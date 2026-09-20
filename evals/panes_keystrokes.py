@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""The panes experiment's number: find + read a page, CLI versus the panes.
+"""The panes experiment's number: find + read a page, CLI versus the screen.
 
 The CLI round trip for "find the page and read it" is two commands — `search
 <query>`, then `show <slug>` retyped from the results — two processes and the
-slug typed twice. The two-pane screen (`lore dev --panes`) runs the same ranked
-search in-process and opens the hit with one more Enter: `/ <query> ↵ ↵ q`, no
-slug ever typed. Both surfaces run the identical `search.search()`, so this
+slug typed twice. The opencode-shaped screen (`lore dev --panes`) runs the same
+ranked search in-process, fills the `search` word from the picker (`/ se ↵`, two
+keys plus one Enter), and opens the top hit with one `o`: `⌕ se ↵ <query> ↵ o`,
+no slug ever typed. Both surfaces run the identical `search.search()`, so this
 compares interactions, not ranking.
 
     python3 evals/panes_keystrokes.py [--store PATH]
 
 Deterministic: the query is fixed, so its keystrokes cancel out of the
-comparison exactly; what remains is the slug retype the panes save, so the saved
-count is `len(slug) + 10` for every page. Exits 1 if the claim fails on any
-measured page.
+comparison exactly; what remains is the slug retype the screen saves, so the
+saved count is `len(slug) + 7` for every page. Exits 1 if the claim fails on
+any measured page.
 """
 from __future__ import annotations
 
@@ -33,9 +34,9 @@ def cli_keys(slug: str, query: str = QUERY) -> int:
     return 1 + len(f"search {query}") + 1 + len(f"show {slug}")
 
 
-def panes_keys(query: str = QUERY) -> int:
-    """`/ <query>` ↵ (apply) ↵ (open) q — the slug is never typed again."""
-    return 1 + len(query) + 1 + 1 + 1
+def screen_keys(query: str = QUERY) -> int:
+    """`/ se ↵ <query> ↵ o` — the picker fills the command word, `o` the slug."""
+    return 1 + 2 + 1 + len(query) + 1 + 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -52,22 +53,22 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"store: {store} ({len(pages)} page(s))")
     print(f"find + read one page, query {QUERY!r}: keystrokes and spawned processes")
-    print(f"{'slug':<46}{'cli':>6}{'panes':>7}{'saved':>7}")
+    print(f"{'slug':<46}{'cli':>6}{'screen':>8}{'saved':>7}")
     failures = 0
     for page in pages[:12]:
         cli = cli_keys(page.slug)
-        pan = panes_keys()
-        if pan >= cli:
+        scr = screen_keys()
+        if scr >= cli:
             failures += 1
-        print(f"{page.slug:<46}{cli:>6}{pan:>7}{cli - pan:>7}")
-    total = sum(cli_keys(p.slug) - panes_keys() for p in pages)
-    print("\nper page: the panes spawn 0 processes where the CLI spawns 2, and")
-    print(f"total over {len(pages)} page(s) they save {total} keystrokes "
-          f"(= sum of len(slug) + 10).")
+        print(f"{page.slug:<46}{cli:>6}{scr:>8}{cli - scr:>7}")
+    total = sum(cli_keys(p.slug) - screen_keys() for p in pages)
+    print("\nper page: the screen spawns 0 processes where the CLI spawns 2, and")
+    print(f"total over {len(pages)} page(s) it saves {total} keystrokes "
+          f"(= sum of len(slug) + 7).")
     if failures:
         print(f"the claim failed on {failures} page(s)", file=sys.stderr)
         return 1
-    print("claim holds: find + read in the panes is never more keystrokes "
+    print("claim holds: find + read on the screen is never more keystrokes "
           "than the CLI round trip.")
     return 0
 

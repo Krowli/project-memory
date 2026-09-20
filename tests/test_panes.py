@@ -1,12 +1,20 @@
-"""The two-pane screen: a pure model, with one pty test for the raw terminal.
+"""The opencode-shaped screen: a pure model, with one pty test for the raw terminal.
 
-The line-editor discipline carries over unchanged: what a keypress decides is
-plain functions on `State`, and those are called here with no terminal. Only the
-draw loop touches curses, so one pty test proves the raw screen draws the panes
-and answers keys — `c` and `Esc` are drawn branches, tested through the model
-and the pipe fallback, not key by key in raw mode.
+The screen behind `lore dev --panes` borrows the opencode screen's shape one to
+one: fresh, a logo and a big "Ask anything…" box; once commands have run, a
+transcript of them with the field at the bottom. The line-editor discipline
+carries over unchanged — what a keypress decides is plain functions on `State`,
+and those are called here with no terminal. Only the draw loop touches curses,
+so one pty test proves the raw screen draws the ask box, runs commands typed
+into it, answers `/` and `o`, and quits back to the line editor.
+
+Commands run from the field go through the same `cli.main` the CLI runs, so the
+in-process output is compared here with a real child's, byte for byte: the field
+is fidelity, not a shortcut. What must own the terminal (the MCP server, the
+wizard, `edit`) is refused from the field, never half-run.
 """
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,61 +41,184 @@ def store(tmp_path):
     return d
 
 
-def test_initial_rows_are_newest_first(store):
-    rows = [p.slug for p in panes.initial_rows(store)]
-    assert rows == ["zeta-page", "middle-page", "alpha-page"]
+def _session(command: str = "", history: list[str] | None = None) -> panes.State:
+    """A fresh screen state with the field (and optionally history) prefilled."""
+    st = panes.State(history=history or [])
+    st.field = command
+    st.cursor = len(command)
+    return st
 
 
-def test_move_clamps_at_both_ends(store):
-    st = panes.State(rows=panes.initial_rows(store))
-    panes.move(st, -1)
-    assert st.selected == 0
-    panes.move(st, 99)
-    assert st.selected == 2
-    panes.move(st, 1)
-    assert st.selected == 2, "the selection never leaves the list"
+def _in_project(monkeypatch, tmp_path, store: Path) -> None:
+    """The same surroundings a real run needs: cwd at the store's project, and a
+    HOME that cannot absorb the post-command housekeeping."""
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.chdir(store.parent)
 
 
-def test_scroll_keeps_the_selection_in_the_viewport(store):
-    rows = panes.initial_rows(store)  # 3 rows
-    # the last row inside a height-1 window forces the offset down to it
-    st = panes.State(rows=rows, selected=2)
-    panes.scroll(st, 1)
-    assert st.offset == 2
-    # already visible, a taller window changes nothing
-    panes.scroll(st, 2)
-    assert st.offset == 2
-    # moving above the window pulls the offset back down
-    st2 = panes.State(rows=rows, selected=2, offset=2)
-    panes.move(st2, -1)
-    assert st2.selected == 1
-    panes.scroll(st2, 2)
-    assert st2.offset == 1
-    # a selection above the window pulls it back up
-    st3 = panes.State(rows=rows, selected=0, offset=2)
-    panes.scroll(st3, 2)
-    assert st3.offset == 0
+def _run_field(command: str, store: Path, monkeypatch, tmp_path) -> tuple[panes.State, int, str]:
+    """Run a command in-process, as the screen would on Enter, and return the run."""
+    _in_project(monkeypatch, tmp_path, store)
+    st = _session(command)
+    rc, text = panes.run_command(st, store, cwd=store.parent)
+    return st, rc, text
 
 
 def test_query_rows_are_the_cli_ranking(store):
     hits = [p.slug for p in panes.query_rows(store, "zeta")]
     assert hits == ["zeta-page"]
+    assert panes.query_rows(store, "") == [], "nothing matches an empty search"
 
 
-def test_query_rows_empty_query_is_the_full_list(store):
-    assert [p.slug for p in panes.query_rows(store, "")] == \
-        [p.slug for p in panes.initial_rows(store)]
+def test_the_field_edits_like_a_line():
+    st = panes.State()
+    panes.field_insert(st, "l")
+    panes.field_insert(st, "i")
+    assert st.field == "li" and st.cursor == 2
+    panes.field_cursor(st, -1)
+    panes.field_insert(st, "s")
+    assert st.field == "lsi", "an insert lands at the cursor, not the end"
+    panes.field_backspace(st)
+    assert st.field == "li" and st.cursor == 1
+    panes.field_backspace(st)
+    panes.field_backspace(st)
+    assert st.field == "i" and st.cursor == 0, "backspace never empties past the start"
 
 
-def test_open_at_opens_the_selected_row(store):
-    st = panes.State(rows=panes.initial_rows(store), selected=1)
-    page = panes.open_at(st)
-    assert st.opened is page and page.slug == "middle-page"
+def test_picker_filters_and_fills_the_field():
+    """`/` opens the picker, typing narrows it, Enter fills `name ` and lets the
+    rest of the command continue in the same field."""
+    st = panes.State()
+    panes.open_picker(st)
+    assert st.picker
+    items = panes.picker_items(st)
+    assert "search" in items and "list" in items and "exit" in items
+    panes.field_insert(st, "se")
+    assert panes.picker_items(st) == ["search"]
+    panes.picker_fill(st)
+    assert not st.picker
+    assert st.field == "search " and st.cursor == len("search ")
+    for ch in "zeta":
+        panes.field_insert(st, ch)
+    assert st.field == "search zeta"
 
 
-def test_open_at_guards_an_empty_list(store):
-    st = panes.State(rows=[])
-    assert panes.open_at(st) is None
+def test_picker_fill_with_no_match_just_closes():
+    st = panes.State()
+    panes.open_picker(st)
+    panes.field_insert(st, "zzz")
+    assert panes.picker_items(st) == []
+    panes.picker_fill(st)  # must not crash or mangle the field
+    assert st.field == "zzz" and not st.picker
+
+
+def test_history_walks_only_on_an_empty_field():
+    st = panes.State(history=["list", "search zeta"])
+    panes.history_back(st, -1)
+    assert st.field == "search zeta"
+    panes.history_back(st, -1)
+    assert st.field == "list"
+    panes.history_back(st, 1)
+    assert st.field == "search zeta"
+    panes.history_back(st, 1)  # newer than the newest: the field empties
+    assert st.field == ""
+    panes.field_insert(st, "x")
+    panes.history_back(st, -1)  # text in the field, ↑ does nothing
+    assert st.field == "x"
+    panes.history_back(st, -1)  # and history does not empty a non-empty field
+    assert st.field == "x"
+
+
+def test_terminal_owning_commands_are_refused_from_the_field():
+    """A stdio server, an editor and a wizard that reads stdin must not run half
+    through the middle of a curses screen."""
+    for argv in (["mcp"], ["dev"], ["edit"], ["panes"]):
+        assert panes._needs_real_terminal(argv), argv
+    assert panes._needs_real_terminal(["init"]), "the wizard without --yes"
+    assert panes._needs_real_terminal(["init", "--store", "home"])
+    assert panes._needs_real_terminal(["init", "--yes"]) is None
+    assert panes._needs_real_terminal(["search", "zeta"]) is None
+
+
+def test_run_command_list_prints_the_agent_surface(store, monkeypatch, tmp_path):
+    _st, rc, text = _run_field("list", store, monkeypatch, tmp_path)
+    assert rc == 0
+    assert "3 page(s) in" in text
+    for slug in ("zeta-page", "middle-page", "alpha-page"):
+        assert slug in text
+
+
+def test_run_command_search_ranks_the_cli_way(store, monkeypatch, tmp_path):
+    _st, rc, text = _run_field("search zeta", store, monkeypatch, tmp_path)
+    assert rc == 0
+    assert "1 hit(s) in" in text
+    assert "zeta-page" in text
+
+
+def test_run_command_an_unknown_command_preserves_usage_and_exit_2(store, monkeypatch, tmp_path):
+    _st, rc, text = _run_field("nonsense", store, monkeypatch, tmp_path)
+    assert rc == 2
+    assert "unknown command" in text
+    assert "FIX:" in text, "the one correction mechanism the agent loop follows"
+
+
+def test_run_command_matches_a_real_child(store, monkeypatch, tmp_path):
+    """In-process execution is fidelity, not a shortcut: the same rc and the same
+    listing, byte for byte, as a real `lore list` child in the same position."""
+    _st, rc, text = _run_field("list", store, monkeypatch, tmp_path)
+    child = subprocess.run([*conftest.LORE, "list"], cwd=store.parent,
+                           capture_output=True, env=conftest.lore_env())
+    assert rc == child.returncode == 0
+    child_text = (child.stdout + child.stderr).decode("utf-8", "replace").rstrip("\n")
+    assert text == child_text, "the field must show exactly what an agent would see"
+
+
+def test_submit_appends_a_turn_and_resets_the_field(store, monkeypatch, tmp_path):
+    """Enter: the command becomes a transcript turn, the field empties, and the
+    command joins the history; an empty field submits nothing."""
+    _in_project(monkeypatch, tmp_path, store)
+    st = _session("list")
+    assert panes.submit(st, store, cwd=store.parent)
+    assert len(st.turns) == 1
+    turn = st.turns[0]
+    assert turn.cmd == "list" and turn.rc == 0
+    assert "3 page(s) in" in turn.output
+    assert st.field == "" and st.cursor == 0
+    assert st.history == ["list"]
+    assert not panes.submit(st, store, cwd=store.parent)
+    assert len(st.turns) == 1, "nothing submitted on an empty field"
+
+
+def test_submit_remembers_search_hits_for_o(store, monkeypatch, tmp_path):
+    """`o` opens the top hit of the last search as a `show` turn — the slug is
+    never retyped — and only once; with no hits `o` is a no-op."""
+    _in_project(monkeypatch, tmp_path, store)
+    st = _session("search zeta")
+    panes.submit(st, store, cwd=store.parent)
+    assert [p.slug for p in st.hits] == ["zeta-page"]
+    panes.open_top_hit(st, store, cwd=store.parent)
+    assert len(st.turns) == 2
+    shown = st.turns[-1]
+    assert shown.cmd == "show zeta-page" and shown.rc == 0
+    assert "slug: zeta-page" in shown.output
+    assert st.hits == [], "o opens once"
+    panes.open_top_hit(st, store, cwd=store.parent)
+    assert len(st.turns) == 2, "o with no hits changes nothing"
+
+
+def test_render_turn_echoes_the_command_then_output_then_exit():
+    turn = panes.Turn(
+        cmd="nonsense", rc=2,
+        output="lore: unknown command 'nonsense'\nFIX: lore search 'nonsense'")
+    lines = panes.render_turn(turn, 50)
+    assert lines[0] == "lore > nonsense", "the echo reads like the prompt"
+    assert lines[-2] == "exit 2"
+    assert lines[-1] == ""
+    non_blank = [ln for ln in lines if ln]
+    assert non_blank[1].startswith("lore: unknown"), "the output follows the echo"
 
 
 def test_wrap_never_exceeds_the_width(store):
@@ -103,10 +234,25 @@ def test_wrap_keeps_blank_paragraphs_blank(store):
     assert lines == ["one", "", "two"]
 
 
+def test_transcript_follows_the_bottom_and_scrolls_back():
+    """The transcript stays glued to the newest line, PgUp lets you leave it,
+    and PgDn at the bottom puts it back."""
+    st = panes.State()
+    panes.clamp_view(st, 0, 10)
+    assert st.view_top == 0
+    panes.clamp_view(st, 40, 10)
+    assert st.view_top == 30
+    panes.scroll_transcript(st, -1, 10, 40)
+    assert not st.follow and st.view_top == 20
+    panes.scroll_transcript(st, 1, 10, 40)
+    assert st.follow and st.view_top == 30
+
+
 @conftest.needs_posix
-def test_the_screen_draws_both_panes_and_answers_keys(store, tmp_path):
-    """Raw-screen proof: the list draws, a query filters it, Enter opens the page
-    on the right, `q` is back to the line editor, and the whole thing exits 0."""
+def test_the_screen_draws_like_opencode_and_runs_commands(store, tmp_path):
+    """Raw-screen proof: the ask box draws, a command typed into it runs
+    in-process and paints its turn, `o` opens the top hit of the last search,
+    `q` is back to the line editor, and the whole thing exits 0."""
     import fcntl
     import pty
     import select
@@ -150,16 +296,20 @@ def test_the_screen_draws_both_panes_and_answers_keys(store, tmp_path):
         return True
 
     try:
-        assert wait_for(b"q quit"), f"no two-pane screen\n{seen[-400:]!r}"
-        assert b"zeta-page" in seen, f"the list is not drawn\n{seen[-400:]!r}"
-        # search: open the field, type, apply — the status line appends the query
-        # (a literal diff), and Enter opens the hit on the right
-        os.write(fd, b"/")
-        assert wait_for(b"search:"), f"the search field did not open\n{seen[-400:]!r}"
-        os.write(fd, b"zeta\r")
-        assert wait_for(b'search "zeta"'), f"the typed query did not apply\n{seen[-400:]!r}"
-        os.write(fd, b"\r")
-        assert wait_for(b"# zeta-page title"), f"the page did not open\n{seen[-400:]!r}"
+        assert wait_for(b"Ask anything"), f"no ask box\n{seen[-400:]!r}"
+        # a command typed into the box runs in-process, and the transcript
+        # paints the listing an agent would see
+        os.write(fd, b"list\r")
+        assert wait_for(b"page(s) in"), f"the box did not run `list`\n{seen[-400:]!r}"
+        assert wait_for(b"lore > list"), f"the command is not echoed\n{seen[-400:]!r}"
+        # a search run makes `o` able to open the top hit without the slug
+        os.write(fd, b"search zeta\r")
+        assert wait_for(b"hit(s) in"), f"search did not run\n{seen[-400:]!r}"
+        os.write(fd, b"o")
+        assert wait_for(b"slug: zeta-page"), f"`o` did not open the top hit\n{seen[-400:]!r}"
+        # a command that owns the terminal is refused from the field, not half-run
+        os.write(fd, b"edit\r")
+        assert wait_for(b"owns the terminal"), f"the guard did not answer\n{seen[-400:]!r}"
         # quit the screen: back to the line editor, then exit cleanly
         os.write(fd, b"q")
         assert wait_for(b"> "), f"no line-editor prompt after quit\n{seen[-400:]!r}"

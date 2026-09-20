@@ -81,7 +81,7 @@ def test_panes_falls_back_to_the_line_editor_without_a_tty(project):
     proc = run_dev(["dev", "--panes"], project, b"help\nexit\n")
     assert proc.returncode == 0
     text = (proc.stdout + proc.stderr).decode("utf-8", "replace")
-    assert "two-pane screen needs a real terminal" in text
+    assert "the panes screen needs a real terminal" in text
     assert "every line is one command" in text, "the line editor still ran"
 
 

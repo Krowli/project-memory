@@ -33,7 +33,7 @@ smoke:
 	PYTHON="$(abspath $(VENV)/bin/python)" bash tools/smoke.sh
 
 # The panes experiment's number: find + read a page against this store, in
-# keystrokes, CLI round trip versus the two-pane screen.
+# keystrokes, CLI round trip versus the opencode-shaped screen.
 eval-panes:
 	PYTHONPATH=src $(VENV)/bin/python evals/panes_keystrokes.py
 
