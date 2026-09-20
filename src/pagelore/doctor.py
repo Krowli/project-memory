@@ -13,6 +13,10 @@ exists:
 - **Nothing connected at all.** Measured, an agent with the block searches 15 times
   out of 15 and an agent without it never does. So "installed but not connected" is
   a fault, not a neutral state, and this exits non-zero to say so.
+- **An MCP entry the harness cannot start.** The config names a command; if that
+  name is not on PATH the server never comes up, and a harness reports that quietly
+  or not at all. And a server that starts must answer `tools/list` with the two
+  tools — checked by running the very binary the config names, not this install.
 
 It also names the leftovers of the pre-0.4.0 layout, which nothing else will.
 """
@@ -20,17 +24,77 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from . import __version__, instructions
 from .cli import add_version
-from .init import AGENTS
+from .init import AGENTS, _project_root, _read_json, codex_registered, registered_in_json
 from .lib import find_store, page_paths
 
 LEGACY_SKILL = Path.home() / ".agents" / "skills" / "project-memory"
+
+
+def _mcp_registrations(root: Path | None) -> dict[str, tuple[Path, str | None]]:
+    """Per agent: the file our server is registered in and the command it names.
+
+    Read-only, and reading is fine where writing was not: ~/.claude.json and
+    Codex's config.toml are looked at, never touched. `Path.home()` is read here
+    rather than at import so a test can point it somewhere else.
+    """
+    home = Path.home()
+    files = {
+        "claude": ([root / ".mcp.json"] if root else []) + [home / ".claude.json"],
+        "gemini": ([root / ".gemini" / "settings.json"] if root else [])
+                  + [home / ".gemini" / "settings.json"],
+    }
+    found: dict[str, tuple[Path, str | None]] = {}
+    for key, candidates in files.items():
+        for path in candidates:
+            entry = registered_in_json(_read_json(path) or {})
+            if entry is not None:
+                found[key] = (path, entry.get("command") or None)
+                break
+    codex_home = Path(os.environ.get("CODEX_HOME") or home / ".codex")
+    command = codex_registered(codex_home / "config.toml")
+    if command is not None:
+        found["codex"] = (codex_home / "config.toml", command or None)
+    return found
+
+
+def _handshake(argv: list[str], timeout: float = 10) -> tuple[bool, str]:
+    """Start `<argv> mcp`, send initialize and tools/list, expect the two tools.
+
+    `argv` is the resolved command from the config, so this proves the server the
+    harness will actually run — an old install earlier on PATH than this one fails
+    here and says so. Every way this can go wrong comes back as (False, why); the
+    doctor never raises.
+    """
+    feed = "\n".join(json.dumps(m) for m in (
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})) + "\n"
+    try:
+        proc = subprocess.run([*argv, "mcp"], input=feed, capture_output=True, text=True,
+                              timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    names: set[str] = set()
+    for line in proc.stdout.splitlines():
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            return False, f"not a JSON-RPC line on stdout: {line[:80]!r}"
+        if message.get("id") == 2:
+            names = {t.get("name") for t in (message.get("result") or {}).get("tools", [])}
+    if names == {"memory_search", "memory_write"}:
+        return True, ", ".join(sorted(names))
+    said = proc.stderr.strip().splitlines()
+    why = said[0] if said else f"tools/list answered {sorted(n for n in names if n) or 'nothing'}"
+    return False, (f"exit {proc.returncode}; " if proc.returncode else "") + why
 
 
 def findings() -> list[dict]:
@@ -71,6 +135,37 @@ def findings() -> list[dict]:
                         "detail": f"{label}: includes {pointed.group(1) if pointed else '?'}"
                                   + ("" if target_ok else " — that file is MISSING, the agent"
                                                           " silently loads nothing; run `lore init`")})
+
+    # The other route. An agent reached over MCP counts as connected; the fault this
+    # detects is a registration the harness cannot start.
+    registered = _mcp_registrations(_project_root())
+    shake: list[str] | None = None
+    for key, (label, _, _) in AGENTS.items():
+        if key not in registered:
+            out.append({"check": f"mcp:{key}", "ok": None,
+                        "detail": f"{label}: not registered as an MCP server"})
+            continue
+        path, command = registered[key]
+        where = f"{label}: MCP server in {path}"
+        if command is None:
+            connected += 1
+            out.append({"check": f"mcp:{key}", "ok": True,
+                        "detail": f"{where} (command not readable)"})
+            continue
+        exe = shutil.which(command)
+        if exe is None:
+            out.append({"check": f"mcp:{key}", "ok": False,
+                        "detail": f"{where} → {command} mcp — but {command} is not on PATH;"
+                                  " the harness cannot start it"})
+            continue
+        connected += 1
+        shake = shake or [exe]
+        out.append({"check": f"mcp:{key}", "ok": True, "detail": f"{where} → {command} mcp"})
+    if shake is not None:
+        ok, detail = _handshake(shake)
+        out.append({"check": "mcp:handshake", "ok": ok,
+                    "detail": f"{shake[0]} mcp answers tools/list with {detail}" if ok
+                              else f"{shake[0]} mcp did not answer tools/list: {detail}"})
 
     out.append({"check": "connected", "ok": connected > 0,
                 "detail": f"{connected} agent(s) connected"

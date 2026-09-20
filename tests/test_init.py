@@ -279,6 +279,98 @@ def test_doctor_catches_an_include_pointing_at_a_file_that_is_gone(machine):
     assert "MISSING" in claude["detail"]
 
 
+def test_doctor_counts_an_mcp_registration_as_connected(machine, monkeypatch):
+    """An agent reached over MCP is connected; the fault is nothing at all."""
+    _, project = machine
+    run("1\n1\n2\ny\n1\n")
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: sys.executable)
+    monkeypatch.setattr(doctor, "_handshake", lambda argv: (True, "memory_search, memory_write"))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:claude"]["ok"] is True
+    assert str(project / ".mcp.json") in rows["mcp:claude"]["detail"]
+    assert rows["connected"]["ok"] is True
+    assert rows["mcp:handshake"]["ok"] is True
+
+
+def test_doctor_flags_an_mcp_entry_whose_command_is_not_on_path(machine):
+    """The harness will run `lore mcp` from its own PATH; a name it cannot find is
+    a server that never starts, and the harness reports that quietly if at all."""
+    run("1\n1\n2\ny\n1\n")
+    rows = {row["check"]: row for row in doctor.findings()}       # which → None here
+    assert rows["mcp:claude"]["ok"] is False
+    assert "not on PATH" in rows["mcp:claude"]["detail"]
+    assert "mcp:handshake" not in rows, "no command to shake hands with"
+
+
+def test_doctor_reports_a_server_that_does_not_answer(machine, monkeypatch):
+    run("1\n1\n2\ny\n1\n")
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: sys.executable)
+    monkeypatch.setattr(doctor, "_handshake", lambda argv: (False, "boom"))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:handshake"]["ok"] is False
+    assert "boom" in rows["mcp:handshake"]["detail"]
+
+
+def test_the_real_handshake_lists_the_two_tools(machine, monkeypatch):
+    """`machine` is load-bearing here: its NO_REFRESH and PROJECT_MEMORY_HOME reach
+    the child, or the router's housekeeping after `lore mcp` exits would rewrite the
+    developer's real ~/.project-memory/AGENT.md with this tree's text."""
+    monkeypatch.setenv("PYTHONPATH", str(REPO / "src"))
+    ok, detail = doctor._handshake([*conftest.LORE])
+    assert ok is True, detail
+    assert "memory_search" in detail and "memory_write" in detail
+
+
+def test_the_handshake_fails_closed_on_a_command_that_is_not_a_server(machine):
+    ok, detail = doctor._handshake([sys.executable, "-c", "print('hello')"])
+    assert ok is False
+    assert detail
+
+
+def test_doctor_says_nothing_about_mcp_when_none_is_registered(machine):
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:claude"]["ok"] is None
+    assert rows["mcp:gemini"]["ok"] is None
+    assert rows["mcp:codex"]["ok"] is None
+    assert "mcp:handshake" not in rows
+
+
+def test_doctor_ignores_a_local_scope_entry_of_another_project_in_claude_json(machine):
+    """~/.claude.json nests local-scope servers under each project's path. Those are
+    someone else's; reporting one as this project's would send `lore uninstall`
+    after an entry it never wrote."""
+    home, _ = machine
+    (home / ".claude.json").write_text(json.dumps({"projects": {"/elsewhere": {
+        "mcpServers": {"project-memory": {"type": "stdio", "command": "lore"}}}}}),
+        encoding="utf-8")
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:claude"]["ok"] is None
+
+
+def test_doctor_reads_a_user_scope_entry_from_claude_json(machine, monkeypatch):
+    home, _ = machine
+    (home / ".claude.json").write_text(json.dumps({"mcpServers": {"project-memory": {
+        "type": "stdio", "command": "lore", "args": ["mcp"]}}}), encoding="utf-8")
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: sys.executable)
+    monkeypatch.setattr(doctor, "_handshake", lambda argv: (True, ""))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:claude"]["ok"] is True
+    assert ".claude.json" in rows["mcp:claude"]["detail"]
+
+
+def test_doctor_reads_codex_config_toml_without_a_toml_parser(machine, monkeypatch):
+    home, _ = machine
+    (home / ".codex").mkdir()
+    (home / ".codex" / "config.toml").write_text(
+        'model = "x"\n\n[mcp_servers.project-memory]\ncommand = "lore"\nargs = ["mcp"]\n\n'
+        '[mcp_servers.project-memory.env]\nA = "1"\n', encoding="utf-8")
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: sys.executable)
+    monkeypatch.setattr(doctor, "_handshake", lambda argv: (True, ""))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:codex"]["ok"] is True
+    assert "config.toml" in rows["mcp:codex"]["detail"]
+
+
 # --- The fourth question: how the agent reaches it -------------------------------
 #
 # Answers, in order: scope (1 this project, 2 every project), agent (1 Claude,
