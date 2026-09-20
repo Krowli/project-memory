@@ -49,7 +49,7 @@ lore init
 ```
 
 `lore init` writes the instruction block to `~/.project-memory/AGENT.md` and then
-asks three questions. Arrows move, space ticks a box, enter confirms, escape skips.
+asks four questions. Arrows move, space ticks a box, enter confirms, escape skips.
 Digits work too, and where there is no terminal — a pipe, a CI job — the questions
 become a numbered prompt instead.
 
@@ -60,7 +60,12 @@ become a numbered prompt instead.
    **The default connects nothing** — writing into your agent configuration unasked
    is not a default anyone else gets to choose for you. If you decline it prints the
    line so you can add it yourself.
-3. **Where this project's pages live**: private and gitignored (the default),
+3. **How the agent reaches it**: the instruction file, an MCP server in the agent's
+   tool list, or both. Enter keeps the file — the measured default — and the
+   measurement is on the question: on Claude Code the file searched 15/15, MCP alone
+   0/15 in September and 3/5 on a later version (see
+   [below](#mcp-measured--and-offered-as-a-choice)). The choice is yours.
+4. **Where this project's pages live**: private and gitignored (the default),
    committed and reviewed in pull requests, or outside the repository behind a
    symlink.
 
@@ -73,6 +78,7 @@ works:
 
 ```bash
 lore init --agent claude --scope project --store tracked --yes
+lore init --agent claude --via mcp --scope project --yes     # the MCP route instead
 ```
 
 To check what is connected, and to catch the three failures that produce no error
@@ -108,6 +114,29 @@ strips block-level comments before injection, so the stamp costs the agent nothi
 A project can override the global answer: put the same line, or a narrower one, in
 that repository's own `CLAUDE.md` or `AGENTS.md`.
 
+### Or as an MCP server
+
+`lore mcp` is the same memory behind two tools, `memory_search` and `memory_write`,
+that call the functions the commands call — same ranking, same write gate, same
+`FIX:` lines. Pick it at the third question, pass `--via mcp`, or register it
+yourself:
+
+| Agent | Command | Where it lands |
+|---|---|---|
+| Claude Code, this project | *(init writes it)* | `.mcp.json` in the repository, meant to be committed |
+| Claude Code, every project | `claude mcp add --transport stdio --scope user project-memory -- lore mcp` | `~/.claude.json` |
+| Gemini CLI | `gemini mcp add --scope user project-memory lore mcp` | `~/.gemini/settings.json` (or `.gemini/settings.json` for the project) |
+| Codex CLI | `codex mcp add project-memory -- lore mcp` | `~/.codex/config.toml` — Codex keeps MCP servers globally |
+
+`lore init` writes the two JSON files itself and keeps everything else in them;
+the other two it registers through the harness's own command when that program
+is on PATH, and otherwise prints the line. The entry names the bare command,
+`lore mcp`, never a path into one person's home, so a committed `.mcp.json` works
+for the next person to clone. Claude Code asks once to approve a project's
+`.mcp.json`. A stdio server is promised no working directory, so `lore mcp` finds
+the store from `PROJECT_MEMORY_DIR`, then the project Claude Code names in
+`CLAUDE_PROJECT_DIR`, then by walking up from wherever it was started.
+
 ### Updating
 
 ```bash
@@ -129,7 +158,10 @@ In that order. `pipx uninstall` cannot run our code, so it leaves the fenced blo
 behind as an include pointing at a file nothing will ever recreate — and an agent
 that cannot load an `@path` does not error, it just stops searching. `lore
 uninstall` removes only the fenced block and leaves everything you wrote around
-it. **Your pages are never touched**, by this or by anything else; delete a
+it. An MCP registration goes out the same way it went in: the entry is dropped
+from `.mcp.json` and Gemini's `settings.json`, and for `~/.claude.json` and Codex's
+`config.toml` the harness's `mcp remove` is run, or printed if the harness is not
+here. **Your pages are never touched**, by this or by anything else; delete a
 `.memory/` directory yourself if you mean to.
 
 ### Upgrading from 0.3.x
@@ -383,14 +415,15 @@ the block pasted into its rules, searched once and its answer followed the
 `superseded by` marker to the reversal. Gemini, Cursor, Kimi, Copilot, OpenCode and
 Pi are unmeasured until someone runs the same command there.
 
-### MCP, measured and refused
+### MCP, measured — and offered as a choice
 
 An MCP server here is a wrapper: it calls the same two functions, so retrieval
 quality cannot differ. The claim to test was the other one — that an agent
 reaches for the memory more reliably when the tools are in its tool list than
-when an instruction file tells it about a command. `evals/mcp_probe.py` is that
-server, stdlib only; `evals/acceptance.py --pointer mcp|include|mcp+include`
-runs it. Fifteen real sessions per arm on a task-shaped prompt that never says
+when an instruction file tells it about a command. `lore mcp` is that server,
+stdlib only, and `evals/mcp_probe.py` is a wrapper over it so that
+`evals/acceptance.py --pointer mcp|include|mcp+include` measures what ships.
+Fifteen real sessions per arm on a task-shaped prompt that never says
 "why", where the store holds the decision and its reversal.
 
 | how the agent learns the memory exists | searched before answering |
@@ -406,10 +439,19 @@ at all, and the one advantage MCP was supposed to have does not exist out of the
 box. With the deferral turned off it matches the instruction line exactly and
 never beats it; added on top of it, it changes nothing.
 
-So MCP is not shipped. It would cost a config entry in each agent's own format
-against one copied directory, a process per session, and context for a tool
-list, and it buys nothing measurable. The probe stays in `evals/` so the
-question can be re-run rather than re-argued.
+For a while that kept MCP out of the package. It is shipped now, as `lore mcp`,
+and the numbers are what changed their job: they are an argument for a default,
+not for deciding on someone's behalf. So the wizard asks, the file is what Enter
+gives you, and the measurement is printed on the question where the choice is
+made.
+
+Re-measured the day it shipped (2026-09-20, Claude Code 2.1.278, five sessions
+per arm, the shipped server): MCP alone at default settings **3 / 5**, MCP alone
+with `ENABLE_TOOL_SEARCH=false` 5 / 5, MCP plus the `@path` line 5 / 5. The
+default arm is no longer zero and not yet reliable; the file is still the only
+arm that has never missed. What would move the default is a harness that shows
+MCP tools by default and has no instruction file worth writing into; the
+acceptance run is there to re-measure rather than re-argue.
 
 
 ### Speed, and the cost of the gate
@@ -477,6 +519,7 @@ src/pagelore/              the program
   search.py index.py       ranking, and the FTS5 index that is a cache
   write.py lib.py stats.py the write gate, the store, the log reader
   init.py doctor.py        the wizard, and the detector for what has gone silently wrong
+  mcp.py                   the same memory as two MCP tools over stdio, when chosen
   instructions.py          renders and refreshes the block an agent reads every turn
   data/AGENT.md            that block — the measured 15/15 text
 npm/                       the Node route: a shim, plus src/pagelore vendored at pack time
@@ -501,6 +544,7 @@ the line that tells the agent about it.
 | Gemini CLI | `@~/.project-memory/AGENT.md` in `GEMINI.md` | per vendor docs |
 | Cursor | the block pasted into User Rules | per vendor docs |
 | Anything else | either, in whatever it reads every turn | n/a |
+| Any of the three, over MCP | `lore mcp` in its tool list, registered by `lore init --via mcp` | Claude Code: alone at default settings 0 of 15, later 3 of 5; every time with `ENABLE_TOOL_SEARCH=false` or the file |
 
 Python 3.9 or newer, which is what a stock macOS ships. The floor is declared in
 one place and checked everywhere it matters: `requires-python` stops `pip`, an

@@ -3,7 +3,9 @@ slug: mcp-measured-and-refused
 title: "MCP измерен против строки в конфиге и отклонён: он ничего не добавляет"
 kind: decision
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-20
+status: superseded
+superseded_by: mcp-offered-as-a-choice
 sources:
   - evals/mcp_probe.py
   - evals/acceptance.py

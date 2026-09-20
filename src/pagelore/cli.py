@@ -27,7 +27,7 @@ from pathlib import Path
 from . import __version__
 
 COMMANDS = ("search", "show", "list", "write", "edit", "rm", "stats", "init", "doctor",
-            "uninstall", "version")
+            "uninstall", "mcp", "version")
 # A command whose word is not its module: `list` is a builtin and `rm` is the
 # shell's, so the modules are named for what they do rather than what is typed.
 MODULES = {"list": "listing", "rm": "remove"}
@@ -107,6 +107,7 @@ def usage(prog: str = "lore") -> str:
         f"  {prog} init                                         connect an agent to it",
         f"  {prog} doctor                                       check this install",
         f"  {prog} uninstall                                    disconnect it again",
+        f"  {prog} mcp                                          the same memory as MCP tools",
         f"  {prog} version                                      which {prog} this is, and from where",
         "",
         f"{prog} <command> --help for the flags of one command.",

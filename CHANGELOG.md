@@ -16,6 +16,27 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the page came back under the floor search applies, which is the one way a hand
   edit goes wrong silently. `rm` deletes and logs, so `stats` still adds up. `version`
   is a word as well as a flag, and the flag is now listed by the bare command.
+- **`lore mcp`, a stdio MCP server in the box.** The same two functions the commands
+  call, behind `memory_search` and `memory_write` — same ranking, same write gate,
+  same `FIX:` lines. It finds the store from `PROJECT_MEMORY_DIR`, then the project
+  Claude Code names in `CLAUDE_PROJECT_DIR`, then by walking up from the cwd, because
+  a stdio server is promised no working directory. stdout carries JSON-RPC lines and
+  nothing else, written as bytes so a Windows text stream cannot add a `\r`.
+- **A fourth question: how the agent reaches it.** Instruction file, MCP server, or
+  both; `--via file|mcp` is the same answer for a script. Enter keeps the file — the
+  measured default — and the measurement sits on the question: on Claude Code the
+  file searched 15/15, MCP alone 0/15 in September and 3/5 re-measured on the day this
+  shipped. The numbers used to keep MCP out of the package; they are an argument for
+  a default, not for deciding on someone's behalf.
+  `.mcp.json` and Gemini's `settings.json` are merged in place with everything else
+  kept; `~/.claude.json` and Codex's `config.toml` go through the harness's own
+  `mcp add`, run when it is on PATH and printed when it is not.
+- **`lore doctor` sees an MCP registration**, checks the command it names is on PATH,
+  and proves the server the harness will run answers `tools/list` with the two tools
+  — an old install earlier on PATH fails there and says which one.
+- **`lore uninstall` takes the MCP entry back out** of `.mcp.json` and `settings.json`,
+  deletes a `.mcp.json` it emptied, and runs or prints `claude mcp remove` /
+  `codex mcp remove` for the files it does not edit by hand.
 
 ### Changed
 
@@ -25,6 +46,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of leaving the whole menu standing under the next one. `NO_COLOR` and
   `TERM=dumb` turn the colour off; a pipe never gets it. The numbered prompt for
   pipes and CI is unchanged.
+- `evals/mcp_probe.py` is a wrapper over the shipped server, so the acceptance run
+  measures what ships.
 
 ## [0.4.1] - 2026-09-19
 

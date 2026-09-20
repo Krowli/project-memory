@@ -85,7 +85,7 @@ jobs:
 
           missing = {"pagelore/cli.py", "pagelore/search.py", "pagelore/write.py",
                      "pagelore/index.py", "pagelore/stats.py", "pagelore/lib.py",
-                     "pagelore/init.py", "pagelore/instructions.py",
+                     "pagelore/init.py", "pagelore/instructions.py", "pagelore/mcp.py",
                      "pagelore/data/AGENT.md", "pagelore/data/page-template.md"} - set(names)
           assert not missing, f"the wheel is missing {sorted(missing)}"
           assert tops == expected, f"unexpected top-level entries: {sorted(tops - expected)}"
@@ -154,6 +154,28 @@ jobs:
           lore search --touching src/a.ts | grep -q "touches src/a.ts"
           lore stats
           lore doctor || true          # exits non-zero when nothing is connected, which is the case here
+
+      # The other route in, end to end, with the binary a harness would run: the
+      # server answers the handshake, init registers it, doctor sees it and proves
+      # it answers, uninstall takes it back out. The runner's HOME is throwaway, so
+      # `lore uninstall` touching the global files is what is being tested, not a
+      # hazard; and no `claude` or `codex` is on PATH, so nothing is run for them.
+      - name: The MCP server answers tools/list, and init, doctor and uninstall know about it
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d) && cd "$work" && git init -q && mkdir -p .memory
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+                        '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | lore mcp > out.jsonl
+          python -c "import json,sys; ls=[json.loads(l) for l in open('out.jsonl') if l.strip()]; \
+            assert len(ls)==2, ls; assert {t['name'] for t in ls[1]['result']['tools']}=={'memory_search','memory_write'}, ls"
+          lore init --scope project --agent claude --via mcp --yes
+          grep -q '"project-memory"' .mcp.json
+          lore doctor --json > doctor.json
+          python -c "import json; f={r['check']:r for r in json.load(open('doctor.json'))['findings']}; \
+            assert f['mcp:claude']['ok'] is True, f['mcp:claude']; assert f['mcp:handshake']['ok'] is True, f['mcp:handshake']"
+          lore doctor
+          lore uninstall
+          test ! -f .mcp.json
 
       - name: A refused write says how to fix it, and exits non-zero
         run: |

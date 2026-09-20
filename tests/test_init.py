@@ -1,4 +1,4 @@
-"""`lore init` asks two questions, and the questions have to be tested.
+"""`lore init` asks four questions, and the questions have to be tested.
 
 The shell installer this replaces shipped a dead prompt: a question placed after
 the value it was supposed to decide, so both answers led to the same place. It
@@ -11,7 +11,9 @@ non-interactive branch and prove exactly as little as piping into the old script
 did. One pty test at the end proves the default wiring itself.
 """
 import io
+import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -53,6 +55,11 @@ def machine(tmp_path, monkeypatch):
                         ("Gemini CLI", home / ".gemini" / "GEMINI.md", "include"))
     monkeypatch.setitem(init.AGENTS, "codex",
                         ("Codex CLI", home / ".codex" / "AGENTS.md", "paste"))
+    # The MCP route registers a server with `claude mcp add` / `codex mcp add` when
+    # that program is on PATH — and on a developer's machine it is. A test that
+    # reached that call with the real `which` would edit the real ~/.claude.json.
+    # So nothing is on PATH here unless a test says otherwise.
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: None)
     return home, project
 
 
@@ -75,7 +82,7 @@ def test_the_block_is_written_before_the_line_that_points_at_it(machine):
 
 def test_choosing_an_agent_shows_the_exact_change_and_asks_first(machine):
     home, _ = machine
-    _, out = run("2\n1\ny\n1\n")
+    _, out = run("2\n1\n\ny\n1\n")
     assert "This will change:" in out
     assert init.short(home / ".claude" / "CLAUDE.md") in out
     assert f"@{instructions.block_path()}" in out
@@ -88,7 +95,7 @@ def test_choosing_an_agent_shows_the_exact_change_and_asks_first(machine):
 
 def test_declining_the_preview_writes_nothing_and_still_says_what_to_add(machine):
     home, _ = machine
-    _, out = run("2\n1\nn\n1\n")
+    _, out = run("2\n1\n\nn\n1\n")
     assert "nothing written" in out
     assert "To connect an agent yourself" in out
     assert instructions.MARK_BEGIN not in (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
@@ -105,8 +112,8 @@ def test_the_default_answer_connects_nothing(machine):
 
 def test_running_it_twice_replaces_the_block_rather_than_stacking_one(machine):
     home, _ = machine
-    run("2\n1\ny\n1\n")
-    run("2\n1\ny\n1\n")
+    run("2\n1\n\ny\n1\n")
+    run("2\n1\n\ny\n1\n")
     written = (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
     assert written.count(instructions.MARK_BEGIN) == 1
     assert written.count(instructions.MARK_END) == 1
@@ -114,7 +121,7 @@ def test_running_it_twice_replaces_the_block_rather_than_stacking_one(machine):
 
 def test_codex_gets_the_text_because_it_cannot_include_a_file(machine):
     home, _ = machine
-    run("2\n3\ny\n1\n")
+    run("2\n3\n\ny\n1\n")
     written = (home / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
     assert "Before stating anything about this project" in written
     assert f"@{instructions.block_path()}" not in written
@@ -174,7 +181,7 @@ def test_this_project_only_writes_into_the_repository_and_not_the_home(machine):
     a choice. The first person to run it wanted one project and had no way to say
     so."""
     home, project = machine
-    _, out = run("1\n1\ny\n1\n")            # this project, Claude Code, yes, private
+    _, out = run("1\n1\n\ny\n1\n")          # this project, Claude Code, the file, yes, private
 
     local = project / "CLAUDE.md"
     assert local.is_file(), "nothing was written into the project"
@@ -236,7 +243,7 @@ def test_flags_are_the_confirmation_so_it_works_in_a_pipeline(machine):
 
 def test_uninstall_takes_out_the_block_and_leaves_the_pages(machine, capsys):
     home, project = machine
-    run("2\n1\ny\n2\n")
+    run("2\n1\n\ny\n2\n")
     (project / ".memory" / "a-page.md").write_text("---\nslug: a-page\n---\n\nkeep me\n",
                                                    encoding="utf-8")
 
@@ -248,6 +255,70 @@ def test_uninstall_takes_out_the_block_and_leaves_the_pages(machine, capsys):
     assert ".memory/" in capsys.readouterr().out
 
 
+def test_uninstall_removes_our_mcp_entry_and_keeps_the_neighbours(machine, capsys):
+    _, project = machine
+    target = project / ".mcp.json"
+    target.write_text(json.dumps({"mcpServers": {"other": {"command": "x"}}}), encoding="utf-8")
+    run("1\n1\n2\ny\n1\n")
+    assert uninstall.main([]) == 0
+    assert mcp_json(target) == {"mcpServers": {"other": {"command": "x"}}}
+    assert "MCP server" in capsys.readouterr().out
+
+
+def test_uninstall_deletes_an_mcp_json_that_only_we_wrote(machine):
+    _, project = machine
+    run("1\n1\n2\ny\n1\n")
+    assert (project / ".mcp.json").is_file()
+    assert uninstall.main([]) == 0
+    assert not (project / ".mcp.json").exists(), "an empty .mcp.json was left in the repo"
+
+
+def test_uninstall_never_deletes_gemini_settings(machine):
+    """settings.json is Gemini's file; emptied of our entry it stays where it was."""
+    home, project = machine
+    (home / ".gemini").mkdir()
+    (home / ".gemini" / "settings.json").write_text(json.dumps({"theme": "dark"}), encoding="utf-8")
+    run("2\n2\n2\ny\n1\n")
+    run("1\n2\n2\ny\n1\n")
+    assert uninstall.main([]) == 0
+    assert mcp_json(home / ".gemini" / "settings.json") == {"theme": "dark"}
+    assert mcp_json(project / ".gemini" / "settings.json") == {}
+    assert (project / ".gemini" / "settings.json").is_file()
+
+
+def test_uninstall_prints_the_harness_remove_command_it_cannot_run(machine, capsys):
+    home, _ = machine
+    claude_json = home / ".claude.json"
+    claude_json.write_text(json.dumps({"mcpServers": {"project-memory": {"command": "lore"}}}),
+                           encoding="utf-8")
+    (home / ".codex").mkdir()
+    config = home / ".codex" / "config.toml"
+    config.write_text('[mcp_servers.project-memory]\ncommand = "lore"\n', encoding="utf-8")
+    before = claude_json.read_bytes(), config.read_bytes()
+
+    assert uninstall.main([]) == 0               # which → None: nothing to run it with
+    out = capsys.readouterr().out
+    assert "claude mcp remove --scope user project-memory" in out
+    assert "codex mcp remove project-memory" in out
+    assert (claude_json.read_bytes(), config.read_bytes()) == before, "it edited a file it must not"
+
+
+def test_uninstall_runs_the_harness_remove_when_it_is_there(machine, monkeypatch):
+    home, project = machine
+    (home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"project-memory": {"command": "lore"}}}), encoding="utf-8")
+    ran = []
+
+    def fake_run(argv, *a, **k):
+        ran.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+    monkeypatch.setattr(init, "_project_root", lambda: project)
+    monkeypatch.setattr(init.subprocess, "run", fake_run)
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: "/fake/claude" if name == "claude" else None)
+    assert uninstall.main([]) == 0
+    assert ran == [["/fake/claude", "mcp", "remove", "--scope", "user", "project-memory"]]
+
+
 def test_doctor_calls_nothing_connected_a_fault(machine):
     """Measured, an agent with the block searches 15 of 15 times and one without it
     never does. "Installed but not connected" is therefore broken, not neutral."""
@@ -255,7 +326,7 @@ def test_doctor_calls_nothing_connected_a_fault(machine):
     assert before["connected"]["ok"] is False
     assert "nothing tells any agent" in before["connected"]["detail"]
 
-    run("2\n1\ny\n1\n")
+    run("2\n1\n\ny\n1\n")
     after = {row["check"]: row for row in doctor.findings()}
     assert after["connected"]["ok"] is True
     assert after["agent:claude"]["ok"] is True
@@ -264,7 +335,7 @@ def test_doctor_calls_nothing_connected_a_fault(machine):
 def test_doctor_catches_an_include_pointing_at_a_file_that_is_gone(machine):
     """The silent failure: no harness errors on a missing `@path`, the agent just
     stops searching, and nobody connects that to whatever deleted the file."""
-    run("2\n1\ny\n1\n")
+    run("2\n1\n\ny\n1\n")
     instructions.block_path().unlink()
 
     claude = {row["check"]: row for row in doctor.findings()}["agent:claude"]
@@ -278,7 +349,7 @@ def test_files_are_shown_home_relative_and_the_line_written_is_shown_verbatim(ma
     include line itself, which is shown exactly as it will be written, because a
     preview that differs from the write is not a preview."""
     home, _ = machine
-    _, out = run("2\n1\ny\n1\n")
+    _, out = run("2\n1\n\ny\n1\n")
     assert f"block at {init.short(instructions.block_path())}" in out
     assert init.short(home / ".claude" / "CLAUDE.md") in out
     assert str(home / ".claude" / "CLAUDE.md") not in out, "an absolute path leaked"
@@ -298,7 +369,7 @@ def test_what_was_done_is_reported_as_an_aligned_indented_list(machine):
     """The report lines came out at column zero between two menus, in the same
     weight as everything else. They are one indented block with one label column."""
     import re
-    _, out = run("2\n1\ny\n1\n")
+    _, out = run("2\n1\n\ny\n1\n")
     # On this path nothing echoes the typed answer, so a report line can follow the
     # prompt on the same line; the block is measured from its own indent.
     rows = [m for m in (re.search(r"  (wrote|updated|store)( +)\S", line)
@@ -306,6 +377,285 @@ def test_what_was_done_is_reported_as_an_aligned_indented_list(machine):
     assert len(rows) == 2, out
     assert {len(m.group(1)) + len(m.group(2)) for m in rows} == {10}, \
         "the two report lines do not share a value column"
+
+
+def test_doctor_counts_an_mcp_registration_as_connected(machine, monkeypatch):
+    """An agent reached over MCP is connected; the fault is nothing at all."""
+    _, project = machine
+    run("1\n1\n2\ny\n1\n")
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: sys.executable)
+    monkeypatch.setattr(doctor, "_handshake", lambda argv: (True, "memory_search, memory_write"))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:claude"]["ok"] is True
+    assert str(project / ".mcp.json") in rows["mcp:claude"]["detail"]
+    assert rows["connected"]["ok"] is True
+    assert rows["mcp:handshake"]["ok"] is True
+
+
+def test_doctor_flags_an_mcp_entry_whose_command_is_not_on_path(machine):
+    """The harness will run `lore mcp` from its own PATH; a name it cannot find is
+    a server that never starts, and the harness reports that quietly if at all."""
+    run("1\n1\n2\ny\n1\n")
+    rows = {row["check"]: row for row in doctor.findings()}       # which → None here
+    assert rows["mcp:claude"]["ok"] is False
+    assert "not on PATH" in rows["mcp:claude"]["detail"]
+    assert "mcp:handshake" not in rows, "no command to shake hands with"
+
+
+def test_doctor_reports_a_server_that_does_not_answer(machine, monkeypatch):
+    run("1\n1\n2\ny\n1\n")
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: sys.executable)
+    monkeypatch.setattr(doctor, "_handshake", lambda argv: (False, "boom"))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:handshake"]["ok"] is False
+    assert "boom" in rows["mcp:handshake"]["detail"]
+
+
+def test_the_real_handshake_lists_the_two_tools(machine, monkeypatch):
+    """`machine` is load-bearing here: its NO_REFRESH and PROJECT_MEMORY_HOME reach
+    the child, or the router's housekeeping after `lore mcp` exits would rewrite the
+    developer's real ~/.project-memory/AGENT.md with this tree's text."""
+    monkeypatch.setenv("PYTHONPATH", str(REPO / "src"))
+    ok, detail = doctor._handshake([*conftest.LORE])
+    assert ok is True, detail
+    assert "memory_search" in detail and "memory_write" in detail
+
+
+def test_the_handshake_fails_closed_on_a_command_that_is_not_a_server(machine):
+    ok, detail = doctor._handshake([sys.executable, "-c", "print('hello')"])
+    assert ok is False
+    assert detail
+
+
+def test_doctor_says_nothing_about_mcp_when_none_is_registered(machine):
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:claude"]["ok"] is None
+    assert rows["mcp:gemini"]["ok"] is None
+    assert rows["mcp:codex"]["ok"] is None
+    assert "mcp:handshake" not in rows
+
+
+def test_doctor_ignores_a_local_scope_entry_of_another_project_in_claude_json(machine):
+    """~/.claude.json nests local-scope servers under each project's path. Those are
+    someone else's; reporting one as this project's would send `lore uninstall`
+    after an entry it never wrote."""
+    home, _ = machine
+    (home / ".claude.json").write_text(json.dumps({"projects": {"/elsewhere": {
+        "mcpServers": {"project-memory": {"type": "stdio", "command": "lore"}}}}}),
+        encoding="utf-8")
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:claude"]["ok"] is None
+
+
+def test_doctor_reads_a_user_scope_entry_from_claude_json(machine, monkeypatch):
+    home, _ = machine
+    (home / ".claude.json").write_text(json.dumps({"mcpServers": {"project-memory": {
+        "type": "stdio", "command": "lore", "args": ["mcp"]}}}), encoding="utf-8")
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: sys.executable)
+    monkeypatch.setattr(doctor, "_handshake", lambda argv: (True, ""))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:claude"]["ok"] is True
+    assert ".claude.json" in rows["mcp:claude"]["detail"]
+
+
+def test_doctor_reads_codex_config_toml_without_a_toml_parser(machine, monkeypatch):
+    home, _ = machine
+    (home / ".codex").mkdir()
+    (home / ".codex" / "config.toml").write_text(
+        'model = "x"\n\n[mcp_servers.project-memory]\ncommand = "lore"\nargs = ["mcp"]\n\n'
+        '[mcp_servers.project-memory.env]\nA = "1"\n', encoding="utf-8")
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: sys.executable)
+    monkeypatch.setattr(doctor, "_handshake", lambda argv: (True, ""))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:codex"]["ok"] is True
+    assert "config.toml" in rows["mcp:codex"]["detail"]
+
+
+# --- The fourth question: how the agent reaches it -------------------------------
+#
+# Answers, in order: scope (1 this project, 2 every project), agent (1 Claude,
+# 2 Gemini, 3 Codex, 4 none), via (1 file, 2 MCP, "1 2" both, empty = file),
+# confirm, store.
+
+MCP_ADD_CLAUDE = "claude mcp add --transport stdio --scope user project-memory -- lore mcp"
+
+
+def mcp_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_mcp_for_claude_in_this_project_writes_mcp_json(machine):
+    """The route measured at 0/15 on default settings is still the person's to
+    choose; the file it writes is the one Claude Code documents for a project."""
+    _, project = machine
+    _, out = run("1\n1\n2\ny\n1\n")
+    target = project / ".mcp.json"
+    assert str(target) in out, "the preview did not name the file it wrote"
+    assert mcp_json(target)["mcpServers"]["project-memory"] == \
+        {"type": "stdio", "command": "lore", "args": ["mcp"]}
+    local = project / "CLAUDE.md"
+    assert not local.exists() or instructions.MARK_BEGIN not in local.read_text(encoding="utf-8")
+
+
+def test_both_methods_write_both(machine):
+    _, project = machine
+    run("1\n1\n1 2\ny\n1\n")
+    assert instructions.MARK_BEGIN in (project / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "project-memory" in mcp_json(project / ".mcp.json")["mcpServers"]
+
+
+def test_an_empty_answer_keeps_the_instruction_file(machine):
+    """Enter alone is the measured default, on the numbered path as on the keyboard."""
+    _, project = machine
+    run("1\n1\n\ny\n1\n")
+    assert instructions.MARK_BEGIN in (project / "CLAUDE.md").read_text(encoding="utf-8")
+    assert not (project / ".mcp.json").exists()
+
+
+def test_mcp_json_merge_keeps_what_was_there_and_is_idempotent(machine):
+    _, project = machine
+    target = project / ".mcp.json"
+    target.write_text(json.dumps({"mcpServers": {"other": {"command": "x"}}, "keep": 1}),
+                      encoding="utf-8")
+    _, out = run("1\n1\n2\ny\n1\n")
+    doc = mcp_json(target)
+    assert doc["keep"] == 1 and doc["mcpServers"]["other"] == {"command": "x"}
+    assert doc["mcpServers"]["project-memory"]["args"] == ["mcp"]
+    assert "  updated   " in out
+
+    before = target.read_bytes()
+    _, out = run("1\n1\n2\ny\n1\n")
+    assert target.read_bytes() == before, "a second run changed the file"
+    assert "  updated   " in out
+
+
+def test_mcp_json_that_is_not_json_is_left_alone(machine):
+    """A config someone keeps with comments in it is theirs to edit; the wizard says
+    what to add and touches nothing."""
+    _, project = machine
+    target = project / ".mcp.json"
+    target.write_text("{ not json\n", encoding="utf-8")
+    code, out = run("1\n1\n2\ny\n1\n")
+    assert code == 0
+    assert target.read_text(encoding="utf-8") == "{ not json\n"
+    assert "  skipped   " in out
+    assert "claude mcp add" in out
+
+
+def test_gemini_project_scope_writes_settings_json_without_a_type_field(machine):
+    """Gemini's stdio entry has no `type`; its schema does not know the field."""
+    _, project = machine
+    run("1\n2\n2\ny\n1\n")
+    entry = mcp_json(project / ".gemini" / "settings.json")["mcpServers"]["project-memory"]
+    assert entry == {"command": "lore", "args": ["mcp"]}
+
+
+def test_gemini_global_scope_writes_the_home_settings(machine):
+    home, _ = machine
+    run("2\n2\n2\ny\n1\n")
+    entry = mcp_json(home / ".gemini" / "settings.json")["mcpServers"]["project-memory"]
+    assert entry["command"] == "lore"
+
+
+def test_claude_global_scope_runs_the_harness_command_after_confirming(machine, monkeypatch):
+    """~/.claude.json is Claude Code's own file and editing it by hand is not
+    documented, so the user-scope entry goes through `claude mcp add` — and only
+    after the person said yes to the preview that named the command."""
+    _, project = machine
+    ran = []
+
+    def fake_run(argv, *a, **k):
+        ran.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+    # subprocess and shutil are one module each for the whole process: a faked `run`
+    # would break the `git rev-parse` inside `_project_root`, so that is pinned too.
+    monkeypatch.setattr(init, "_project_root", lambda: project)
+    monkeypatch.setattr(init.subprocess, "run", fake_run)
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: "/fake/claude" if name == "claude" else None)
+
+    _, out = run("2\n1\n2\ny\n1\n")
+    assert ran == [["/fake/claude", "mcp", "add", "--transport", "stdio", "--scope", "user",
+                    "project-memory", "--", "lore", "mcp"]]
+    assert "  added     " in out and "via claude mcp add" in out
+
+
+def test_claude_global_scope_without_the_harness_prints_the_command(machine, monkeypatch):
+    ran = []
+    monkeypatch.setattr(init, "_project_root", lambda: machine[1])
+    monkeypatch.setattr(init.subprocess, "run", lambda *a, **k: ran.append(a))
+    _, out = run("2\n1\n2\ny\n1\n")
+    assert MCP_ADD_CLAUDE in out
+    assert ran == []
+
+
+def test_a_failing_harness_command_is_reported_not_hidden(machine, monkeypatch):
+    monkeypatch.setattr(init, "_project_root", lambda: machine[1])
+    monkeypatch.setattr(init.subprocess, "run",
+                        lambda argv, *a, **k: subprocess.CompletedProcess(argv, 1, "", "nope\n"))
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: "/fake/claude" if name == "claude" else None)
+    _, out = run("2\n1\n2\ny\n1\n")
+    assert "  skipped   " in out and "nope" in out
+    assert MCP_ADD_CLAUDE in out, "the person was not told what to run instead"
+
+
+def test_codex_mcp_is_global_whatever_the_scope(machine):
+    """Codex keeps MCP servers in ~/.codex/config.toml and nowhere else, so
+    'this project only' has no file to write; the command is the answer."""
+    _, project = machine
+    _, out = run("", argv=["--scope", "project", "--agent", "codex", "--via", "mcp", "--yes"],
+                 interactive=False)
+    assert "codex mcp add project-memory -- lore mcp" in out
+    assert not (project / ".mcp.json").exists()
+
+
+def test_the_via_flag_is_the_same_answer_as_the_question(machine):
+    _, project = machine
+    _, out = run("", argv=["--scope", "project", "--agent", "claude", "--via", "mcp", "--yes"],
+                 interactive=False)
+    assert (project / ".mcp.json").is_file()
+    local = project / "CLAUDE.md"
+    assert not local.exists() or instructions.MARK_BEGIN not in local.read_text(encoding="utf-8")
+    # The two notes are printed on the scripted path too: the approval prompt Claude
+    # Code will show, and what MCP alone measured.
+    assert "approve" in out
+    assert "ENABLE_TOOL_SEARCH" in out
+
+
+def test_via_defaults_to_the_file_for_scripts(machine):
+    _, project = machine
+    run("", argv=["--scope", "project", "--agent", "claude", "--yes"], interactive=False)
+    assert instructions.MARK_BEGIN in (project / "CLAUDE.md").read_text(encoding="utf-8")
+    assert not (project / ".mcp.json").exists()
+
+
+def test_the_command_flag_reaches_the_mcp_entry(machine):
+    _, project = machine
+    run("", argv=["--scope", "project", "--agent", "claude", "--via", "mcp",
+                  "--command", "pagelore", "--yes"], interactive=False)
+    assert mcp_json(project / ".mcp.json")["mcpServers"]["project-memory"]["command"] == "pagelore"
+
+
+def test_mcp_only_on_claude_code_says_what_was_measured(machine):
+    _, out = run("1\n1\n2\ny\n1\n")
+    assert "ENABLE_TOOL_SEARCH" in out
+    _, out = run("1\n1\n1 2\ny\n1\n")
+    assert "ENABLE_TOOL_SEARCH" not in out, "the caveat is for MCP alone"
+
+
+def test_the_preview_names_the_mcp_target_and_the_command(machine):
+    home, project = machine
+    _, out = run("2\n1\n2\nn\n1\n")
+    assert MCP_ADD_CLAUDE in out
+    assert "nothing written" in out
+    assert not (project / ".mcp.json").exists()
+    assert not (home / ".gemini").exists()
+
+
+def test_the_manual_text_names_the_mcp_commands(machine):
+    _, out = run("2\n4\n")
+    assert "claude mcp add" in out
+    assert "gemini mcp add" in out
+    assert "codex mcp add" in out
 
 
 @conftest.needs_posix
@@ -372,3 +722,69 @@ def test_it_asks_with_arrow_keys_on_a_real_terminal(tmp_path):
     # Nothing was ticked, so nothing may have been written.
     assert instructions.MARK_BEGIN not in (home / ".claude" / "CLAUDE.md").read_text(
         encoding="utf-8") if (home / ".claude" / "CLAUDE.md").exists() else True
+
+
+@conftest.needs_posix
+def test_the_fourth_question_is_asked_with_arrows_on_a_real_terminal(tmp_path):
+    """The test above ticks no agent, so the question about how the agent reaches the
+    memory never appears in it. This one ticks Claude Code and proves the fourth
+    question is drawn by the keyboard menu, then escapes it (the file, the default)
+    and declines the preview so that nothing is written."""
+    import pty
+    import select
+    import time
+
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(project)
+        os.environ.update({"HOME": str(home), "USERPROFILE": str(home),
+                           "PYTHONPATH": str(REPO / "src"), "PATH": "/usr/bin:/bin",
+                           instructions.HOME_ENV: str(home / ".project-memory"),
+                           instructions.NO_REFRESH_ENV: "1"})
+        os.execv(sys.executable, [sys.executable, "-m", "pagelore", "init"])
+
+    script = [(b"This project only", b"\r"),
+              (b"Which agents", b" \r"),                  # tick Claude Code, confirm
+              (b"How should the agent reach it?", b"\x1b"),  # escape: nothing = the file
+              (b"Write it?", b"n"),
+              (b"memory pages live", b"\r")]
+    seen, deadline = b"", time.time() + 30
+    try:
+        while script and time.time() < deadline:
+            if select.select([fd], [], [], 0.2)[0]:
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    break
+                seen += chunk
+            expect, keys = script[0]
+            if expect in seen:
+                os.write(fd, keys)
+                script.pop(0)
+                time.sleep(0.15)
+        while time.time() < deadline and b"take it all back out" not in seen:
+            if not select.select([fd], [], [], 0.2)[0]:
+                continue
+            chunk = os.read(fd, 4096)
+            if not chunk:
+                break
+            seen += chunk
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+        os.waitpid(pid, 0)
+
+    text = seen.decode("utf-8", "replace")
+    assert not script, f"the wizard never asked: {[e for e, _ in script]}\n{text[-600:]}"
+    assert "How should the agent reach it?" in text
+    assert "MCP server" in text
+    assert "Choice (" not in text, "a real terminal was given the numbered prompt"
+    assert "nothing written" in text, f"the preview was not declined\n{text[-600:]}"
+    assert not (project / ".mcp.json").exists()
+    assert not (project / "CLAUDE.md").exists()

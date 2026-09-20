@@ -1,8 +1,15 @@
 """`lore init` — connect an agent to the memory, and decide where a store lives.
 
-Three questions, and nothing else. They are the only part of the old shell installer
+Four questions, and nothing else. They are the only part of the old shell installer
 that packaging does not subsume: pipx knows how to put a program on PATH and
 nothing about which file an agent reads.
+
+The fourth — how the agent reaches the memory — is the person's choice between the
+instruction file and an MCP server, or both. It exists because the measurement that
+kept MCP out of the package (0/15 searches on Claude Code's defaults, 15/15 with the
+file; re-measured 3/5 on a later Claude Code) is an argument for a default, not for
+deciding on someone's behalf. So the numbers sit on the question and the file stays
+what Enter gives you.
 
 The first question is scope, and it exists because it was missing. The wizard used
 to offer three files and all three were global; the screen said "applies to every
@@ -24,6 +31,9 @@ review.
 from __future__ import annotations
 
 import argparse
+import json
+import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -46,6 +56,10 @@ PROJECT_FILES = {"claude": "CLAUDE.md", "gemini": "GEMINI.md", "codex": "AGENTS.
 ORDER = ("claude", "gemini", "codex")
 STORE_MODES = ("gitignored", "tracked", "home")
 SCOPES = ("global", "project")
+# How the agent reaches the memory: the instruction file, an MCP server, or both.
+VIA = ("file", "mcp")
+# The server's name in every harness's config — the name the measurement used.
+MCP_SERVER = "project-memory"
 
 
 def target_for(key: str, root: Path | None) -> tuple[str, Path, str]:
@@ -98,8 +112,15 @@ To connect an agent yourself, one line, once:
 Per project instead of per machine: put the same line in the project's own
 CLAUDE.md or AGENTS.md. Only one agent: put it in that agent's definition.
 
+Or as an MCP server, in the agent's own tool list, instead of or as well as the file:
+
+  Claude Code     {mcp_manual_command("claude", None, cmd)}
+  Gemini CLI      {mcp_manual_command("gemini", None, cmd)}
+  Codex CLI       {mcp_manual_command("codex", None, cmd)}
+
 Or without questions:
   {cmd} init --agent claude --agent codex --yes
+  {cmd} init --agent claude --via mcp --scope project --yes
   {cmd} init --store tracked --yes
 """, file=out)
 
@@ -129,18 +150,224 @@ def _write_agents(chosen: list[str], cmd: str, out, root: Path | None = None) ->
             report("skipped", f"{short(target)} ({exc})", out)
 
 
-def _preview(chosen: list[str], cmd: str, out, root: Path | None = None) -> None:
+def _preview(chosen: list[str], cmd: str, out, root: Path | None = None,
+             via: tuple[str, ...] = ("file",)) -> None:
     block_file = instructions.block_path()
     lines = instructions.render(cmd).strip().count("\n") + 1
     print("\n  This will change:", file=out)
     for key in chosen:
-        _, target, kind = target_for(key, root)
-        print(f"    {short(target)}", file=out)
-        if kind == "include":
-            print(f"      + @{block_file}", file=out)
-        else:
-            print(f"      + the contents of {block_file} ({lines} lines)", file=out)
+        if "file" in via:
+            _, target, kind = target_for(key, root)
+            print(f"    {short(target)}", file=out)
+            if kind == "include":
+                print(f"      + @{block_file}", file=out)
+            else:
+                print(f"      + the contents of {block_file} ({lines} lines)", file=out)
+        if "mcp" in via:
+            _, path, argv = mcp_target(key, root, cmd)
+            if path is not None:
+                print(f"    {short(path)}", file=out)
+                print(f'      + mcpServers["{MCP_SERVER}"] → {cmd} mcp', file=out)
+            else:
+                why = "  (Codex keeps MCP servers globally)" if key == "codex" and root else ""
+                print(f"    run  {_shell_line(argv)}{why}", file=out)
     print("", file=out)
+
+
+# --- MCP: the other way an agent reaches the memory ---------------------------------
+#
+# Two mechanisms, for the same reason the file route has include and paste. Where
+# the harness documents a plain JSON file that people edit by hand — Claude Code's
+# `.mcp.json` in a project, Gemini's `settings.json` at either scope — the entry is
+# merged into it here, and everything else in the file is left as it was. Where it
+# does not — `~/.claude.json` is Claude Code's own state file and hand edits are
+# undocumented; Codex's `config.toml` is TOML, which the standard library cannot
+# write and, before 3.11, cannot read — the harness's own `mcp add` is run when the
+# harness is on PATH, and printed for the person when it is not.
+#
+# The command written is the bare name this was run as, never an absolute path:
+# `.mcp.json` is meant to be committed and shared, and a path into one person's
+# home breaks it for everyone else. `lore doctor` checks the name is on PATH.
+
+
+def mcp_entry(key: str, cmd: str) -> dict:
+    """The server entry in that harness's own shape.
+
+    Claude Code documents `type: "stdio"`; Gemini's schema has no `type` for stdio
+    servers at all, so the field is left out rather than sent for it to reject.
+    """
+    entry = {"command": cmd, "args": ["mcp"]}
+    return {"type": "stdio", **entry} if key == "claude" else entry
+
+
+def mcp_target(key: str, root: Path | None, cmd: str) -> tuple[str, Path | None, list[str] | None]:
+    """(label, JSON file to merge into, harness command to run) — exactly one of the
+    last two is set. `root` is the project for "this project only" and None for
+    "every project". Codex keeps MCP servers in ~/.codex/config.toml and nowhere
+    else, so for it the scope is ignored and the preview says so."""
+    label = AGENTS[key][0]
+    if key == "claude":
+        if root is not None:
+            return label, root / ".mcp.json", None
+        return label, None, ["claude", "mcp", "add", "--transport", "stdio", "--scope", "user",
+                             MCP_SERVER, "--", cmd, "mcp"]
+    if key == "gemini":
+        base = root if root is not None else Path.home()
+        return label, base / ".gemini" / "settings.json", None
+    return label, None, ["codex", "mcp", "add", MCP_SERVER, "--", cmd, "mcp"]
+
+
+def mcp_manual_command(key: str, root: Path | None, cmd: str) -> str:
+    """The one line a person runs to do it themselves — printed when the harness is
+    not on PATH, when a JSON file could not be parsed, and in the manual text."""
+    scope = "project" if root is not None else "user"
+    if key == "claude":
+        return f"claude mcp add --transport stdio --scope {scope} {MCP_SERVER} -- {cmd} mcp"
+    if key == "gemini":
+        return f"gemini mcp add --scope {scope} {MCP_SERVER} {cmd} mcp"
+    return f"codex mcp add {MCP_SERVER} -- {cmd} mcp"
+
+
+def _shell_line(argv: list[str]) -> str:
+    return " ".join(shlex.quote(a) for a in argv)
+
+
+def _read_json(path: Path):
+    """The parsed document, {} for a missing file, None when it is not plain JSON."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except OSError:
+        return None
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def merge_json_server(path: Path, entry: dict) -> str | None:
+    """Fold our server into a JSON config, keeping everything else.
+
+    Returns "wrote" when the file did not exist and "updated" when it did — even if
+    the entry was already identical, because the person asked and the answer is
+    what is there now — or None when the file is not plain JSON. Then nothing is
+    written: a config someone keeps with comments in it is theirs to edit.
+    """
+    doc = _read_json(path)
+    if doc is None:
+        return None
+    action = "updated" if path.exists() else "wrote"
+    doc.setdefault("mcpServers", {})[MCP_SERVER] = entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return action
+
+
+def registered_in_json(doc) -> dict | None:
+    """Our entry under the top-level `mcpServers`, and only there.
+
+    That is where `.mcp.json`, Gemini's settings.json and the user-scope half of
+    ~/.claude.json keep servers. ~/.claude.json also nests local-scope servers under
+    each project's path; those are not ours — this program never writes local scope
+    — and a recursive walk would report another project's entry as this one's and
+    then try to remove it. The shape is not documented, so it is not guessed: top
+    level or nothing.
+    """
+    servers = doc.get("mcpServers") if isinstance(doc, dict) else None
+    entry = servers.get(MCP_SERVER) if isinstance(servers, dict) else None
+    return entry if isinstance(entry, dict) else None
+
+
+def remove_json_server(path: Path) -> tuple[bool, bool]:
+    """Take our entry out. Returns (changed, the document is now empty).
+
+    An emptied `mcpServers` goes too, so a `.mcp.json` this program created reads
+    as `{}` afterwards and the caller can delete it; whether to is the caller's
+    call, because Gemini's settings.json is never ours to delete. A file that is
+    not plain JSON is left alone.
+    """
+    doc = _read_json(path)
+    if not doc or registered_in_json(doc) is None:
+        return False, False
+    del doc["mcpServers"][MCP_SERVER]
+    if not doc["mcpServers"]:
+        del doc["mcpServers"]
+    path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return True, not doc
+
+
+def codex_registered(config_toml: Path) -> str | None:
+    """The `command` of our server in Codex's config.toml; "" when the table is there
+    but the command is not readable; None when it is not registered.
+
+    A regex, not a TOML parser: the standard library has no parser before 3.11 and
+    no writer at all, and the two lines this needs are the table header and the
+    `command = "…"` under it.
+    """
+    try:
+        lines = config_toml.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    inside = seen = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            inside = stripped in (f"[mcp_servers.{MCP_SERVER}]", f'[mcp_servers."{MCP_SERVER}"]')
+            seen = seen or inside
+            continue
+        if inside and stripped.startswith("command"):
+            _, _, value = stripped.partition("=")
+            return value.strip().strip('"').strip("'")
+    return "" if seen else None
+
+
+def _run_or_print(argv: list[str], out) -> bool:
+    """The harness's own `mcp add` / `mcp remove`, when the harness is here to run it.
+
+    Otherwise the line is printed for the person: the two files behind these
+    commands, ~/.claude.json and ~/.codex/config.toml, are not ours to edit by hand.
+    A failure is reported with the harness's first line and the command to retry —
+    never hidden, because the next thing the person sees would be an agent that
+    does not have the tools they were told it had.
+    """
+    line = _shell_line(argv)
+    exe = shutil.which(argv[0])
+    if exe is None:
+        report("run", f"{line}   ({argv[0]} is not on PATH here, so do this yourself)", out)
+        return False
+    try:
+        proc = subprocess.run([exe, *argv[1:]], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        report("skipped", f"{argv[0]} could not be run ({exc})", out)
+        report("run", line, out)
+        return False
+    verb = argv[2]
+    if proc.returncode == 0:
+        report("added" if verb == "add" else "removed", f"{MCP_SERVER} via {argv[0]} mcp {verb}", out)
+        return True
+    said = (proc.stderr or proc.stdout).strip().splitlines()
+    report("skipped", f"{argv[0]} exited {proc.returncode}: {said[0] if said else 'no output'}", out)
+    report("run", line, out)
+    return False
+
+
+def _write_mcp(chosen: list[str], cmd: str, out, root: Path | None) -> None:
+    for key in chosen:
+        _, path, argv = mcp_target(key, root, cmd)
+        if argv is not None:
+            _run_or_print(argv, out)
+            continue
+        action = merge_json_server(path, mcp_entry(key, cmd))
+        if action is None:
+            report("skipped", f"{short(path)} is not plain JSON; left alone", out)
+            report("run", mcp_manual_command(key, root, cmd), out)
+        else:
+            report(action, short(path), out)
+    if "claude" in chosen and root is not None:
+        report("note", "Claude Code asks once to approve the project's .mcp.json; "
+                       "run /mcp in a session to do it", out)
 
 
 def _apply_store(mode: str, root: Path, out) -> None:
@@ -201,6 +428,9 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
     ap.add_argument("--scope", choices=SCOPES, default=None,
                     help="global: every project on this machine (default). "
                          "project: only the repository you are standing in")
+    ap.add_argument("--via", action="append", default=[], choices=VIA,
+                    help="how the agent reaches it: file (an @-line in its instruction file, "
+                         "the default) or mcp (a stdio server in its tool list); repeatable")
     ap.add_argument("--store", choices=STORE_MODES, help="where this project's pages live")
     ap.add_argument("--command", default=None,
                     help="the command name to write into the block (default: how you ran this)")
@@ -228,7 +458,7 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
     # and a CI job driving a pipe both take the numbered path, which is why every
     # test of these questions keeps working unchanged.
     keyboard = interactive and menu.has_keyboard(inp)
-    flags_given = bool(args.agent or args.store or args.scope)
+    flags_given = bool(args.agent or args.store or args.scope or args.via)
     root = _project_root()
 
     # 1. Scope. Asked only when there is a project to choose, and only when the
@@ -264,14 +494,35 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
         chosen = [key for key in chosen if key]
 
     if chosen:
+        # 3. How the agent reaches it. The numbers are on the question rather than in
+        #    the README because this is only a choice if what was measured is in front
+        #    of the person as they make it. Enter keeps the file: the measured default.
+        via = tuple(dict.fromkeys(args.via))
+        if not via and interactive:
+            via = tuple(menu.ask(
+                "How should the agent reach it?",
+                "Enter keeps the file. Measured: file 15/15; MCP alone 0/15, later 3/5.",
+                [("file", "Instruction file", "one @-line the agent reads every turn"),
+                 ("mcp", "MCP server", "in its tool list, deferred by default on Claude Code")],
+                multi=True, cursor=0, stdin=inp, out=out, keyboard=keyboard))
+        via = via or ("file",)
+
         confirmed = args.yes or flags_given
         if not confirmed and interactive:
-            _preview(chosen, cmd, out, scope_root)
+            _preview(chosen, cmd, out, scope_root, via)
             confirmed = menu.confirm("Write it?", stdin=inp, out=out, keyboard=keyboard)
             if not confirmed:
                 print("nothing written", file=out)
         if confirmed:
-            _write_agents(chosen, cmd, out, scope_root)
+            if "file" in via:
+                _write_agents(chosen, cmd, out, scope_root)
+            if "mcp" in via:
+                _write_mcp(chosen, cmd, out, scope_root)
+                if via == ("mcp",) and "claude" in chosen:
+                    report("note", "measured on Claude Code: MCP alone searched 0/15 at default "
+                                   "settings in 2026-09, 3/5 on a later version;", out)
+                    report("", "every time with ENABLE_TOOL_SEARCH=false, or with the "
+                               "instruction file as well", out)
             print("\nStart a new agent session for it to take effect.\n", file=out)
         else:
             manual(cmd, out)
