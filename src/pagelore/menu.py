@@ -53,6 +53,76 @@ def decode(data: str) -> str:
     return ""
 
 
+# One label column for every question, so the columns do not move between one
+# question and the next. Wider than the widest label the wizard uses.
+WIDTH = 20
+
+_CODES = {"bold": "1", "dim": "2", "cyan": "36", "green": "32"}
+
+
+def paint(text: str, style: str, color: bool) -> str:
+    """`text` in one SGR style, or unchanged when colour is off or the text is empty."""
+    if not color or not text:
+        return text
+    return f"\x1b[{_CODES[style]}m{text}\x1b[0m"
+
+
+def wants_color(out) -> bool:
+    """Whether to colour what goes to `out`.
+
+    `NO_COLOR` set (no-color.org) or `TERM=dumb` says no; so does a stream that is
+    not a terminal, because a pipe reading escape codes is the one thing every
+    scripted caller of this wizard would have to strip.
+    """
+    if os.environ.get("NO_COLOR") or os.environ.get("TERM") == "dumb":
+        return False
+    try:
+        return bool(out.isatty())
+    except (AttributeError, ValueError):
+        return False
+
+
+def render_question(title: str, note: str, color: bool) -> str:
+    """The question block: `? title`, its note, and a blank line before the rows.
+
+    Pure so that the screen can be looked at without a terminal. Every line ends in
+    `\\r\\n` because the keyboard menu prints inside raw mode, where a bare line
+    feed does not return the carriage.
+    """
+    lines = [f"{paint('?', 'cyan', color)} {paint(title, 'bold', color)}"]
+    if note:
+        lines.append(f"  {paint(note, 'dim', color)}")
+    lines.append("")
+    return "".join(f"{line}\r\n" for line in lines)
+
+
+def render_list(options, cursor: int, picked: set, multi: bool, color: bool) -> str:
+    """The rows, a blank line, and the key hint under them.
+
+    Redrawn in place on every keypress, so each line starts with erase-line: a
+    label that shrank would otherwise leave its tail on the screen.
+    """
+    lines = []
+    for i, (_, label, detail) in enumerate(options):
+        here = i == cursor
+        arrow = "❯" if here else " "
+        box = ("[x] " if i in picked else "[ ] ") if multi else ""
+        cell = f"{label:<{WIDTH - len(box)}}"    # the box eats into the label column
+        if here:
+            arrow, cell = paint(arrow, "cyan", color), paint(cell, "cyan", color)
+        lines.append(f"  {arrow} {box}{cell} {paint(detail, 'dim', color)}".rstrip())
+    keys = "space toggle · enter confirm" if multi else "enter choose"
+    lines.append("")
+    lines.append(f"  {paint(f'↑↓ move · {keys} · esc skip', 'dim', color)}")
+    return "".join(f"\x1b[2K{line}\r\n" for line in lines)
+
+
+def render_answer(title: str, answer: str, color: bool, skipped: bool = False) -> str:
+    """The one line an answered question collapses to."""
+    mark = paint("–", "dim", color) if skipped else paint("✔", "green", color)
+    return f"{mark} {paint(title, 'bold', color)}  {paint(answer, 'dim' if skipped else 'cyan', color)}\r\n"
+
+
 def has_keyboard(stream) -> bool:
     """Whether this stream is a terminal we can read one keypress from.
 
@@ -128,20 +198,6 @@ def _read_key(stream) -> str:
     return first + rest
 
 
-def _render(options, cursor: int, picked: set, multi: bool, out) -> None:
-    for i, (_, label, detail) in enumerate(options):
-        arrow = "❯" if i == cursor else " "
-        if multi:
-            box = "[x]" if i in picked else "[ ]"
-            line = f" {arrow} {box} {label:<14} {detail}"
-        else:
-            line = f" {arrow} {label:<20} {detail}"
-        # `\r\n`, not `\n`: raw mode turns off ONLCR, so a bare line feed drops a
-        # line without returning the carriage and the list walks off to the right.
-        out.write(f"\x1b[2K{line.rstrip()}\r\n")
-    out.flush()
-
-
 def _numbered(title: str, note: str, options, multi: bool, default_label: str,
               stdin, out) -> list[str]:
     if title:
@@ -167,7 +223,7 @@ def _numbered(title: str, note: str, options, multi: bool, default_label: str,
 
 def ask(title: str, note: str, options, *, multi: bool = False,
         cursor: int = 0, preselected=(), stdin=None, out=None,
-        keyboard: bool | None = None) -> list[str]:
+        keyboard: bool | None = None, color: bool | None = None) -> list[str]:
     """Ask one question and return the keys of the chosen options.
 
     `options` is a list of (key, label, detail). An empty result means the person
@@ -181,9 +237,15 @@ def ask(title: str, note: str, options, *, multi: bool = False,
     if not keyboard:
         default_label = options[cursor][1] if options else ""
         return _numbered(title, note, options, multi, default_label, stdin, out)
+    if color is None:
+        color = wants_color(out)
 
-    keys = "space to toggle, enter to confirm" if multi else "enter to choose"
     picked = {i for i, (key, _, _) in enumerate(options) if key in preselected}
+    skipped = False
+    # The blank line before the question is part of the block that is erased, so
+    # that answered questions stack one under the other with no gap.
+    question = "\r\n" + render_question(title, note, color)
+    rows = len(options) + 2                      # rows, blank, hint
     try:
         # Raw mode first, before a single character of the question is printed. The
         # gap between printing and reading is small and real: a key pressed inside it
@@ -192,16 +254,13 @@ def ask(title: str, note: str, options, *, multi: bool = False,
         # here on needs `\r\n`, because raw mode turns off the newline translation.
         with raw_mode(stdin):
             out.write("\x1b[?25l")              # hide the cursor while it moves
-            if title:
-                out.write(f"\r\n{title}\r\n")
-            if note:
-                out.write(f"{note}\r\n")
-            out.write(f"  ↑↓ {keys}, esc to skip\r\n")
-            _render(options, cursor, picked, multi, out)
+            out.write(question)
+            out.write(render_list(options, cursor, picked, multi, color))
+            out.flush()
             while True:
                 key = decode(_read_key(stdin))
                 if key == "quit":
-                    picked = set()
+                    picked, skipped = set(), True
                     break
                 if key == "up":
                     cursor = (cursor - 1) % len(options)
@@ -220,8 +279,15 @@ def ask(title: str, note: str, options, *, multi: bool = False,
                     if not multi:
                         picked = {cursor}
                     break
-                out.write(f"\x1b[{len(options)}A")   # back to the top of the list
-                _render(options, cursor, picked, multi, out)
+                out.write(f"\x1b[{rows}A")          # back to the top of the rows
+                out.write(render_list(options, cursor, picked, multi, color))
+                out.flush()
+            # Collapse: back to the blank line above the question, erase everything
+            # below it, and leave one line saying what was answered.
+            labels = [options[i][1] for i in sorted(picked)]
+            answer = "skipped" if skipped else (", ".join(labels) or "nothing")
+            out.write(f"\x1b[{question.count(chr(10)) + rows}A\x1b[J")
+            out.write(render_answer(title, answer, color, skipped=skipped))
     finally:
         out.write("\x1b[?25h")
         out.flush()
@@ -229,7 +295,8 @@ def ask(title: str, note: str, options, *, multi: bool = False,
     return [options[i][0] for i in sorted(picked)]
 
 
-def confirm(question: str, *, stdin=None, out=None, keyboard: bool | None = None) -> bool:
+def confirm(question: str, *, stdin=None, out=None, keyboard: bool | None = None,
+            color: bool | None = None) -> bool:
     """Yes or no, defaulting to yes, on either input route."""
     stdin = stdin or sys.stdin
     out = out or sys.stdout
@@ -238,9 +305,12 @@ def confirm(question: str, *, stdin=None, out=None, keyboard: bool | None = None
     if not keyboard:
         print(f"{question} [Y/n]: ", end="", file=out, flush=True)
         return (stdin.readline() or "").strip().lower() in ("", "y", "yes")
+    if color is None:
+        color = wants_color(out)
 
     with raw_mode(stdin):
-        out.write(f"{question} [Y/n] ")
+        out.write(f"{paint('?', 'cyan', color)} {paint(question, 'bold', color)} "
+                  f"{paint('(Y/n)', 'dim', color)} ")
         out.flush()
         while True:
             key = _read_key(stdin)
@@ -250,7 +320,8 @@ def confirm(question: str, *, stdin=None, out=None, keyboard: bool | None = None
             if key in ("n", "N", "\x1b", "\x03"):
                 answer = False
                 break
-    print("yes" if answer else "no", file=out)
+    out.write("\r\x1b[2K" + render_answer(question, "yes" if answer else "no", color))
+    out.flush()
     return answer
 
 

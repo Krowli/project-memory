@@ -3,10 +3,10 @@ slug: wizard-asks-with-arrows-and-scope
 title: "The wizard asks with arrows, and asks where it applies"
 kind: decision
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-20
 sources:
-  - src/pagelore/menu.py
   - src/pagelore/init.py
+  - src/pagelore/menu.py
 ---
 
 ## Context
@@ -60,3 +60,33 @@ cursor `ESC O A` — plus the Windows two-byte `\xe0 H` are just byte sequences.
 table is tested directly and exhaustively, and the two pty tests are left to prove
 only the wiring: that a real terminal gets the menu at all, and that a real arrow
 moves the cursor.
+
+## The screen, after the mechanics
+
+Arrows shipped and the same person asked again, this time about the screen: no
+colour, no weight, title and note and hint and rows in one block, columns that moved
+between one question and the next, and every answered menu left standing under the
+next one so nothing said which menu was live. All of it was the old numbered layout
+with `❯` glued on; nothing had been designed, because every test measured whether
+the wizard did the right thing and none looked at it.
+
+Rendering is now three pure functions in `menu.py` — `render_question`,
+`render_list`, `render_answer` — so the screen can be asserted line by line without a
+terminal, and `ask` only writes what they return. Bold `? title`, dim note, blank
+line, rows, blank line, dim key hint. The cursor row is cyan. `WIDTH` is one label
+column for both menu shapes: in the tick-box list the `[ ] ` eats into the label
+column instead of pushing the details four columns right.
+
+An answered question collapses: cursor up over the whole block, erase to the end of
+the screen, one line `✔ title  answer` (or `– title  skipped` on escape). The blank
+line above the question is part of the erased block so that answered questions stack
+with no gap; a text block printed between questions (`manual()`, the "start a new
+session" line) ends with its own blank line to keep the gap on that side. That
+convention is the one thing a future edit to `init.py`'s output is likely to break.
+
+Colour is off under `NO_COLOR` or `TERM=dumb` and never sent to a pipe. The
+numbered prompt for pipes and CI is untouched, which is why no existing test of the
+questions changed except where a path is now shown as `~/…`. Paths on screen go
+through `init.short()`, with one exception: the `+ @…` include line in the preview is
+printed exactly as it will be written, because a preview that differs from the write
+is not a preview.

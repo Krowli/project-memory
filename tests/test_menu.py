@@ -95,6 +95,82 @@ def test_confirm_defaults_to_yes_on_the_numbered_path():
                         keyboard=False) is False
 
 
+# --- what the keyboard menu looks like -------------------------------------------
+#
+# The first version got the mechanics right and the screen wrong: title, note, hint
+# and rows in one undifferentiated block, the answered menu left standing under the
+# next one, columns that moved between questions. The person who asked for arrows
+# asked again, about that. Rendering is a pure function so that it can be looked at
+# here, without a terminal, one line at a time.
+
+def strip_ansi(text: str) -> str:
+    import re
+    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text)
+
+
+def test_the_question_marks_its_title_and_dims_the_note():
+    block = menu.render_question("Pick one", "A note.", color=True)
+    assert "\x1b[1mPick one\x1b[0m" in block, "the title is not bold"
+    assert "\x1b[2mA note.\x1b[0m" in block, "the note is not dim"
+    assert block.endswith("\r\n\r\n"), "no blank line between the question and the rows"
+
+
+def test_without_colour_the_question_is_the_same_words_and_no_escape_codes():
+    block = menu.render_question("Pick one", "A note.", color=False)
+    assert "\x1b" not in block
+    assert strip_ansi(menu.render_question("Pick one", "A note.", color=True)) == block
+
+
+def test_every_detail_starts_in_the_same_column_in_both_modes():
+    """The single-choice and the tick-box lists used two different label widths, so
+    the columns jumped between one question and the next."""
+    single = strip_ansi(menu.render_list(OPTIONS, 0, set(), False, color=False))
+    multi = strip_ansi(menu.render_list(OPTIONS, 0, {1}, True, color=False))
+    rows = [line for line in (single + multi).splitlines() if "first" in line
+            or "second" in line or "third" in line]
+    assert len(rows) == 6
+    columns = {max(line.rfind(word) for word in ("first", "second", "third")) for line in rows}
+    assert len(columns) == 1, f"details start in {len(columns)} different columns"
+
+
+def test_only_the_cursor_row_carries_the_arrow_and_the_colour():
+    rows = menu.render_list(OPTIONS, 1, set(), False, color=True).splitlines()
+    assert rows[0].count("\u276f") == 0 and rows[1].count("\u276f") == 1
+    assert "\x1b[36m" in rows[1], "the cursor row is not highlighted"
+    assert "\x1b[36m" not in rows[0]
+
+
+def test_the_key_hint_sits_under_the_rows_and_names_the_keys():
+    single = strip_ansi(menu.render_list(OPTIONS, 0, set(), False, color=False))
+    multi = strip_ansi(menu.render_list(OPTIONS, 0, set(), True, color=False))
+    assert single.rstrip().splitlines()[-1].strip().startswith("\u2191\u2193")
+    assert "enter" in single and "esc" in single
+    assert "space" in multi and "space" not in single
+
+
+def test_the_answer_line_names_the_question_and_the_choice():
+    assert menu.render_answer("Pick one", "Gamma", color=False) == "\u2714 Pick one  Gamma\r\n"
+    assert menu.render_answer("Pick one", "skipped", color=False, skipped=True) == \
+        "\u2013 Pick one  skipped\r\n"
+
+
+def test_no_color_turns_the_colour_off_even_on_a_terminal(monkeypatch):
+    """no-color.org: the one convention every tool honours, so this one does too."""
+    class Tty(io.StringIO):
+        def isatty(self):
+            return True
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    assert menu.wants_color(Tty()) is True
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert menu.wants_color(Tty()) is False
+    monkeypatch.delenv("NO_COLOR")
+    monkeypatch.setenv("TERM", "dumb")
+    assert menu.wants_color(Tty()) is False
+    assert menu.wants_color(io.StringIO()) is False, "a pipe got colour codes"
+
+
 @conftest.needs_posix
 def test_arrows_move_the_cursor_on_a_real_terminal(tmp_path):
     """What every test above bypasses: raw mode, the escape sequences a terminal
@@ -140,3 +216,8 @@ def test_arrows_move_the_cursor_on_a_real_terminal(tmp_path):
     text = seen.decode("utf-8", "replace")
     assert "PICKED=c" in text, text[-400:]
     assert "❯" in text, "the cursor was never drawn"
+    # The menu is replaced by one line naming the answer. A raw byte stream cannot
+    # show what the screen holds, so this checks the mechanism — cursor up, erase
+    # to the end of the screen — and the line that follows it.
+    assert "\x1b[J" in text, "the answered menu was left standing"
+    assert "\u2714 Pick one  Gamma" in strip_ansi(text), text[-400:]

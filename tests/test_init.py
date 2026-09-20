@@ -77,7 +77,7 @@ def test_choosing_an_agent_shows_the_exact_change_and_asks_first(machine):
     home, _ = machine
     _, out = run("2\n1\ny\n1\n")
     assert "This will change:" in out
-    assert str(home / ".claude" / "CLAUDE.md") in out
+    assert init.short(home / ".claude" / "CLAUDE.md") in out
     assert f"@{instructions.block_path()}" in out
 
     written = (home / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
@@ -155,7 +155,7 @@ def test_the_home_store_symlinks_out_of_the_repo_and_gitignores_the_link(machine
     assert instructions.home() in target.parents, \
         "the store home and the block home are computed in two places again"
     assert ".memory/" in (project / ".gitignore").read_text(encoding="utf-8")
-    assert str(target) in out
+    assert init.short(target) in out
 
     # The link has to be writable end to end, or the mode is decorative.
     (project / "src").mkdir()
@@ -270,6 +270,42 @@ def test_doctor_catches_an_include_pointing_at_a_file_that_is_gone(machine):
     claude = {row["check"]: row for row in doctor.findings()}["agent:claude"]
     assert claude["ok"] is False
     assert "MISSING" in claude["detail"]
+
+
+def test_files_are_shown_home_relative_and_the_line_written_is_shown_verbatim(machine):
+    """Every path on the screen wrapped at full length and the list stopped being
+    readable; `~/` is what a person would type back. The one exception is the
+    include line itself, which is shown exactly as it will be written, because a
+    preview that differs from the write is not a preview."""
+    home, _ = machine
+    _, out = run("2\n1\ny\n1\n")
+    assert f"block at {init.short(instructions.block_path())}" in out
+    assert init.short(home / ".claude" / "CLAUDE.md") in out
+    assert str(home / ".claude" / "CLAUDE.md") not in out, "an absolute path leaked"
+    assert f"+ @{instructions.block_path()}" in out
+
+
+def test_the_store_question_keeps_the_project_path_out_of_its_title(machine):
+    """The path was glued to the end of the question with three spaces, which read
+    as part of the question. It is the note under it."""
+    _, project = machine
+    _, out = run("2\n4\n1\n")
+    assert "memory pages live?\n" in out, "the title does not end its own line"
+    assert str(project) in out
+
+
+def test_what_was_done_is_reported_as_an_aligned_indented_list(machine):
+    """The report lines came out at column zero between two menus, in the same
+    weight as everything else. They are one indented block with one label column."""
+    import re
+    _, out = run("2\n1\ny\n1\n")
+    # On this path nothing echoes the typed answer, so a report line can follow the
+    # prompt on the same line; the block is measured from its own indent.
+    rows = [m for m in (re.search(r"  (wrote|updated|store)( +)\S", line)
+                        for line in out.splitlines()) if m]
+    assert len(rows) == 2, out
+    assert {len(m.group(1)) + len(m.group(2)) for m in rows} == {10}, \
+        "the two report lines do not share a value column"
 
 
 @conftest.needs_posix

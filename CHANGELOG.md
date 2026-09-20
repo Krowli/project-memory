@@ -6,6 +6,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The wizard looks like one.** Bold questions, dim notes and key hints, a coloured
+  cursor row, one label column in both menu shapes, `~/` paths, and an answered
+  question collapses to one line — `✔ Where should this apply?  This project only` —
+  instead of leaving the whole menu standing under the next one. `NO_COLOR` and
+  `TERM=dumb` turn the colour off; a pipe never gets it. The numbered prompt for
+  pipes and CI is unchanged.
+
 ## [0.4.1] - 2026-09-19
 
 `lore init` got an arrow-key menu and a question it was missing. Both came from the

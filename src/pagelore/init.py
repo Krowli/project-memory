@@ -100,7 +100,17 @@ CLAUDE.md or AGENTS.md. Only one agent: put it in that agent's definition.
 
 Or without questions:
   {cmd} init --agent claude --agent codex --yes
-  {cmd} init --store tracked --yes""", file=out)
+  {cmd} init --store tracked --yes
+""", file=out)
+
+
+def report(label: str, value: str, out) -> None:
+    """One line of what was done: `  updated   ~/.claude/CLAUDE.md`.
+
+    Every report line goes through here so that they share one label column and
+    one indent, and read as a block rather than as stray prints between menus.
+    """
+    print(f"  {label:<9} {value}", file=out)
 
 
 def _write_agents(chosen: list[str], cmd: str, out, root: Path | None = None) -> None:
@@ -113,19 +123,19 @@ def _write_agents(chosen: list[str], cmd: str, out, root: Path | None = None) ->
             old = target.read_text(encoding="utf-8") if target.exists() else ""
             new, action = instructions.replace_block(old, instructions.fenced(body))
             target.write_text(new, encoding="utf-8")
-            print(f"{action}:   {target}", file=out)
+            report(action, short(target), out)
         except OSError as exc:
             # One unwritable target must not abandon the others.
-            print(f"skipped:   {target} ({exc})", file=out)
+            report("skipped", f"{short(target)} ({exc})", out)
 
 
 def _preview(chosen: list[str], cmd: str, out, root: Path | None = None) -> None:
     block_file = instructions.block_path()
     lines = instructions.render(cmd).strip().count("\n") + 1
-    print("\nThis will change:", file=out)
+    print("\n  This will change:", file=out)
     for key in chosen:
         _, target, kind = target_for(key, root)
-        print(f"  {target}", file=out)
+        print(f"    {short(target)}", file=out)
         if kind == "include":
             print(f"      + @{block_file}", file=out)
         else:
@@ -139,8 +149,7 @@ def _apply_store(mode: str, root: Path, out) -> None:
         # Deliberately creates nothing: the first write creates the store and
         # shields it as it does. A machine-setup command that makes a directory
         # inside someone's repository is a surprise, and this one would be useless.
-        print(f"store:     {store} will appear on the first write, gitignored as it is created",
-              file=out)
+        report("store", f"{short(store)}  appears on the first write, gitignored", out)
         return
     if mode == "tracked":
         # Must act now. `.tracked` has to exist before the first write, or the
@@ -149,8 +158,8 @@ def _apply_store(mode: str, root: Path, out) -> None:
         (store / TRACKED_MARKER).write_text(
             "These pages are committed on purpose. Do not gitignore this store.\n",
             encoding="utf-8")
-        print(f"store:     {store}  (committed with the repo — do not write secrets here)",
-              file=out)
+        report("store", f"{short(store)}  committed with the repo; do not write secrets here",
+               out)
         return
     # `instructions.home()`, not `Path.home() / ".project-memory"`: the same directory
     # by default, but one place decides where it is. Two computations of one path drift,
@@ -159,15 +168,17 @@ def _apply_store(mode: str, root: Path, out) -> None:
     target = instructions.home() / root.name
     target.mkdir(parents=True, exist_ok=True)
     if store.exists() and not store.is_symlink():
-        print(f"note:      {store} already exists as a real directory; leaving it alone.\n"
-              f"           Move its contents to {target} and delete it to finish the switch.",
-              file=out)
+        report("note", f"{short(store)} already exists as a real directory; leaving it alone.",
+               out)
+        report("", f"Move its contents to {short(target)} and delete it to finish the switch.",
+               out)
         return
     if store.is_symlink():
         store.unlink()
     store.symlink_to(target)
     _ignore(root, out)
-    print(f"store:     {target}  (outside the repo, reached via .memory/ symlink)", file=out)
+    report("store", f"{short(target)}  outside the repo, reached through the .memory/ symlink",
+           out)
 
 
 def _ignore(root: Path, out) -> None:
@@ -178,7 +189,7 @@ def _ignore(root: Path, out) -> None:
     prefix = "" if (not existing or existing.endswith("\n")) else "\n"
     with gitignore.open("a", encoding="utf-8") as fh:
         fh.write(f"{prefix}\n# project-memory: notes stay local\n.memory/\n")
-    print("ignored:   .memory/ added to .gitignore", file=out)
+    report("ignored", ".memory/ added to .gitignore", out)
 
 
 def main(argv: list[str] | None = None, *, prog: str = "lore init",
@@ -205,7 +216,7 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
     # First, always: the file the line points at has to exist before the line is
     # offered. A wrong include path is the one failure that produces no error.
     block_file = instructions.install(cmd)
-    print(f"pagelore, block at {block_file}\n", file=out)
+    print(f"{prog}  ·  block at {short(block_file)}\n", file=out)
 
     if args.show:
         print(f"@{block_file}", file=out)
@@ -261,7 +272,7 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
                 print("nothing written", file=out)
         if confirmed:
             _write_agents(chosen, cmd, out, scope_root)
-            print("\nStart a new agent session for it to take effect.", file=out)
+            print("\nStart a new agent session for it to take effect.\n", file=out)
         else:
             manual(cmd, out)
     else:
@@ -272,8 +283,8 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
         mode = args.store
         if mode is None:
             picked = menu.ask(
-                f"Where should this project's memory pages live?   {short(root)}",
-                "",
+                "Where should this project's memory pages live?",
+                short(root),
                 [("gitignored", "Private", "appears on the first write, gitignored"),
                  ("tracked", "Committed", "reviewed in pull requests, shared with the team"),
                  ("home", "Outside the repo", f"~/.project-memory/{root.name}/ via a symlink")],
