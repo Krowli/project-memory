@@ -467,8 +467,8 @@ def main(argv: list[str] | None = None, *, prog: str = "lore search") -> int:
     if not hits:
         print(f"no matches in {store}", file=sys.stderr)
     else:
-        # The store's absolute path, so the documented `cat` works from any
-        # working directory rather than only from the store's parent.
+        # The store's absolute path, so a reader knows which store answered when
+        # more than one is reachable; `show <slug>` opens a page without it.
         print(f"{len(hits)} hit(s) in {store}")
         for s, p in hits:
             print(format_hit(s, p, query))

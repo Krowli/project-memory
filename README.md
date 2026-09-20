@@ -160,9 +160,13 @@ Search before answering, write after meaningful work:
 ```bash
 lore search "terminal freeze webgl context lost"     # ranked: slug — title — what matched — [score] updated
 lore search --touching src/terminal/renderer.ts      # the pages about this file, first
+lore show webgl-context-loss                         # one page, by the slug a search printed
+lore list                                            # every page, newest first, superseded ones marked
 lore write --slug webgl-context-loss \
   --title "xterm WebGL context loss on display sleep" \
   --kind bug --source src/terminal/renderer.ts --body - < page.md
+lore edit webgl-context-loss                         # in $EDITOR; warns if the page fell under the search floor
+lore rm webgl-context-loss                           # delete one, logged
 lore stats --since 2026-09-01                        # what the store has been doing
 ```
 

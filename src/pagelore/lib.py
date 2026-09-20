@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import re
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -230,6 +231,30 @@ def load_pages(store: Path) -> list[Page]:
         except OSError:
             continue  # unreadable now; one bad entry must not end the search
     return out
+
+
+def find_page(store: Path, slug: str) -> Page | None:
+    """The page a search result named, or None.
+
+    By slug rather than by filename: a page carries its slug in the frontmatter and
+    a file renamed by hand keeps the old one, and the slug is what search prints.
+    Goes through `page_paths` so the filters on what may be read apply here too.
+    """
+    for page in load_pages(store):
+        if page.slug == slug:
+            return page
+    return None
+
+
+def refuse_missing(store: Path, slug: str, cmd: str) -> int:
+    """Say that no page has this slug, and what to run instead. Exit code 2.
+
+    A `FIX:` line, because an agent that typed a slug from memory is one search
+    away from the right one, and its loop already knows to follow that line.
+    """
+    print(f"no page {slug!r} in {store}", file=sys.stderr)
+    print(f"FIX: {cmd} search {slug!r}", file=sys.stderr)
+    return 2
 
 
 def ensure_store(store: Path) -> None:

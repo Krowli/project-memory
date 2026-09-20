@@ -13,7 +13,7 @@ Durable decisions, contracts and bug post-mortems live as markdown pages in `.me
 lore search "your query"
 ```
 
-The first output line is the store's absolute path; open a full page with `cat <that path>/<slug>.md`. A hit marked `⚠ superseded by <slug>` was replaced — read the replacement first. Add `--touching <path>` to put the pages written against a file you are about to change first. If nothing relevant comes back, say so rather than guessing.
+Open a full page with `lore show <slug>`. A hit marked `⚠ superseded by <slug>` was replaced — read the replacement first. Add `--touching <path>` to put the pages written against a file you are about to change first. If nothing relevant comes back, say so rather than guessing.
 
 The trigger is the kind of claim you are about to make, not the wording of the question; "how does X work" and "what do you know about this project" are memory questions too. This file is not a substitute for the search — it carries instructions rather than reasons, and it goes stale while a page stays dated and sourced. Skip the search only for mechanical work (a command, a typo, a rename) and for general programming questions.
 

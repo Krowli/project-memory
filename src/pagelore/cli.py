@@ -26,7 +26,11 @@ from pathlib import Path
 
 from . import __version__
 
-COMMANDS = ("search", "write", "stats", "init", "doctor", "uninstall")
+COMMANDS = ("search", "show", "list", "write", "edit", "rm", "stats", "init", "doctor",
+            "uninstall", "version")
+# A command whose word is not its module: `list` is a builtin and `rm` is the
+# shell's, so the modules are named for what they do rather than what is typed.
+MODULES = {"list": "listing", "rm": "remove"}
 
 # The two console scripts this package installs. `lore` is the documented name;
 # `project-memory` is the escape hatch for a machine where something else already
@@ -94,11 +98,16 @@ def usage(prog: str = "lore") -> str:
         "",
         f"  {prog} search \"terminal freeze webgl context lost\"   find pages",
         f"  {prog} search --touching src/renderer.ts            pages about a file",
+        f"  {prog} show <slug>                                  print one page",
+        f"  {prog} list                                         every page, newest first",
         f"  {prog} write --slug … --title … --kind … --source …  record one",
+        f"  {prog} edit <slug>                                  open one in $EDITOR",
+        f"  {prog} rm <slug>                                    delete one",
         f"  {prog} stats                                        what the store has been doing",
         f"  {prog} init                                         connect an agent to it",
         f"  {prog} doctor                                       check this install",
         f"  {prog} uninstall                                    disconnect it again",
+        f"  {prog} version                                      which {prog} this is, and from where",
         "",
         f"{prog} <command> --help for the flags of one command.",
     ] + ([] if connected else [
@@ -140,7 +149,9 @@ def main(argv: list[str] | None = None) -> int:
     if not argv or argv[0] in ("-h", "--help", "help"):
         print(usage(prog))
         return 0
-    if argv[0] in ("-V", "--version"):
+    # A word as well as a flag: it is the first thing a person types when looking
+    # for it, and the one screen they read did not mention the flag.
+    if argv[0] in ("-V", "--version", "version"):
         print(version_line(prog))
         return 0
 
@@ -154,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"commands: {', '.join(COMMANDS)}", file=sys.stderr)
         return 2
 
-    module = importlib.import_module(f"pagelore.{name}")
+    module = importlib.import_module(f"pagelore.{MODULES.get(name, name)}")
     try:
         return module.main(rest, prog=f"{prog} {name}")
     finally:

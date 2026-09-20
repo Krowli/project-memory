@@ -6,6 +6,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`lore show <slug>`, `lore list`, `lore edit <slug>`, `lore rm <slug>`, `lore version`.**
+  The contract used to open a page with `cat <store path>/<slug>.md`, which was
+  correct and never typed; it now says `lore show <slug>`, the slug a search
+  printed and nothing to copy. `list` shows what `ls` cannot — kind, date, and which
+  pages were superseded. `edit` opens a page in `$VISUAL`/`$EDITOR` and says so if
+  the page came back under the floor search applies, which is the one way a hand
+  edit goes wrong silently. `rm` deletes and logs, so `stats` still adds up. `version`
+  is a word as well as a flag, and the flag is now listed by the bare command.
+
 ### Changed
 
 - **The wizard looks like one.** Bold questions, dim notes and key hints, a coloured

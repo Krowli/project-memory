@@ -24,10 +24,9 @@ changing an unfamiliar subsystem, search first:
 lore search "your query"
 ```
 
-Query words are OR'd and ranked, so give several. The first output line is the
-store's absolute path; open a full page with `cat <that path>/<slug>.md`. A hit
-marked `⚠ superseded by <slug>` was replaced — read the replacement first. If
-nothing relevant comes back, say so rather than guessing.
+Query words are OR'd and ranked, so give several. Open a full page with
+`lore show <slug>`. A hit marked `⚠ superseded by <slug>` was replaced — read the
+replacement first. If nothing relevant comes back, say so rather than guessing.
 
 The trigger is the kind of claim you are about to make, not the wording of the
 question; "how does X work" and "what do you know about this project" are memory
