@@ -200,11 +200,13 @@ lore write --slug webgl-context-loss \
 lore edit webgl-context-loss                         # in $EDITOR; warns if the page fell under the search floor
 lore rm webgl-context-loss                           # delete one, logged
 lore stats --since 2026-09-01                        # what the store has been doing
+lore dev                                             # the same commands in a console (bare `lore` too); --sandbox rehearses on a throwaway store
 ```
 
 A bare `lore` prints the command list and exits 0, because an agent checking
-whether the tool exists must not read a non-zero exit as a broken install. An
-unknown command prints a `FIX:` line naming the one you probably meant.
+whether the tool exists must not read a non-zero exit as a broken install. On a
+real terminal a bare `lore` opens the console instead; both face the same `>`.
+An unknown command prints a `FIX:` line naming the one you probably meant.
 
 `--touching PATH` puts the pages whose `sources` cite that file, or anything
 under that directory, ahead of every lexical hit, marked `▸ touches <path>`,
@@ -506,7 +508,10 @@ pytest                                         # both retrieval paths, in CI on 
 ```
 
 `evals/acceptance.py` needs `lore` on PATH and refuses to run without it: an agent
-that tries to search and cannot would score the same as one that never tried.
+that tries to search and cannot would score the same as one that never tried. It
+runs the first `lore` it finds, so point `PAGELORE_BIN=.venv/bin/lore` at the
+editable install below — a stale released build already on PATH must not be the
+one measured.
 
 Every decision these numbers bought is also a page in this repository's own
 `.memory/`, dated and sourced, including the ones that refused something.
@@ -520,6 +525,7 @@ src/pagelore/              the program
   write.py lib.py stats.py the write gate, the store, the log reader
   init.py doctor.py        the wizard, and the detector for what has gone silently wrong
   mcp.py                   the same memory as two MCP tools over stdio, when chosen
+  dev.py                   the console: the same commands, --sandbox on a throwaway store
   instructions.py          renders and refreshes the block an agent reads every turn
   data/AGENT.md            that block — the measured 15/15 text
 npm/                       the Node route: a shim, plus src/pagelore vendored at pack time
@@ -527,7 +533,8 @@ docs/                      page format, retrieval detail, and primary-source res
 evals/                     reproducible measurement: corpus, queries, scorer, speed,
                            an MCP probe, and a real-agent acceptance run
 tests/                     pytest suite, stdlib only
-tools/                     one-shot maintenance scripts
+tools/                     smoke.sh: build the wheel, install it in isolation, run it
+Makefile                   `make dev/test/smoke` — the local loop, spelled once
 .memory/                   this project's own pages, tracked on purpose
 install.sh                 retired; it now only prints the new commands and uninstalls 0.3.x
 ```
@@ -562,13 +569,19 @@ files. Nothing looked, so nobody knew.
 
 ```bash
 git clone https://github.com/Krowli/project-memory && cd project-memory
-pip install -e ".[dev]"
-pytest && PROJECT_MEMORY_NO_FTS5=1 pytest && ruff check .
+make dev          # .venv: editable install, pytest and ruff.
+                  # The `lore` already on PATH may be a released build; the one
+                  # that tracks this tree is .venv/bin/lore.
+make test         # pytest on both retrieval paths, then ruff — both pytest runs
+                  # have to pass, the second covers the scan ranker CI never runs
+bash tools/smoke.sh   # or: make smoke. Build the wheel, install it in an
+                  # isolated environment, and run it end to end exactly as CI's
+                  # install-smoke does — the release path rehearsed locally,
+                  # nothing published and nothing on this machine touched.
+.venv/bin/lore dev    # the same commands in a console; --sandbox rehearses them
+                  # against a throwaway store and a fake HOME. A bare `lore` on
+                  # a real terminal opens the same console.
 ```
-
-Both pytest runs have to pass. The second covers the scan ranker that answers when
-SQLite has no FTS5, which every machine in CI does have, so without it that path
-rots undetected.
 
 **No proposal lands without a number from `evals/` or a failing test it fixes.**
 That rule is why two features that measurably improve retrieval are refused in

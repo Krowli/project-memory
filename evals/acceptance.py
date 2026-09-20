@@ -40,6 +40,9 @@ at least one search event landed before the agent answered.
 
 The agent needs `lore` on PATH; this refuses to run without it, because an agent
 that wants to search and cannot is scored the same as one that never tried.
+`PAGELORE_BIN` overrides which `lore` runs — an editable install in this tree is
+the right target, and a stale `lore` a PATH can already own must not be the one
+measured.
 
 `{prompt}`, `{project}` and `{repo}` are substituted into the agent command.
 The command is split with shlex, so quote as you would in a shell.
@@ -126,7 +129,7 @@ def main(argv=None) -> int:
     ap.add_argument("--timeout", type=int, default=600)
     args = ap.parse_args(argv)
 
-    command = shutil.which("lore") or shutil.which("pagelore")
+    command = os.environ.get("PAGELORE_BIN") or shutil.which("lore") or shutil.which("pagelore")
     if command is None:
         print("FIX: no `lore` on PATH. `pipx install -e .` or `pip install -e .` first — "
               "an agent that tries to search and cannot scores the same as one that "

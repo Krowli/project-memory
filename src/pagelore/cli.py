@@ -27,7 +27,7 @@ from pathlib import Path
 from . import __version__
 
 COMMANDS = ("search", "show", "list", "write", "edit", "rm", "stats", "init", "doctor",
-            "uninstall", "mcp", "version")
+            "uninstall", "mcp", "dev", "version")
 # A command whose word is not its module: `list` is a builtin and `rm` is the
 # shell's, so the modules are named for what they do rather than what is typed.
 MODULES = {"list": "listing", "rm": "remove"}
@@ -109,6 +109,7 @@ def usage(prog: str = "lore") -> str:
         f"  {prog} uninstall                                    disconnect it again",
         f"  {prog} mcp                                          the same memory as MCP tools",
         f"  {prog} version                                      which {prog} this is, and from where",
+        f"  {prog} dev                                          the same commands, in a console",
         "",
         f"{prog} <command> --help for the flags of one command.",
     ] + ([] if connected else [
@@ -140,13 +141,30 @@ def speak_utf8() -> None:
             pass
 
 
+def wants_console() -> bool:
+    """Whether a bare `lore` should open the console: only on a real terminal.
+
+    An agent, a script and a CI job never see a terminal here, so they all still
+    get the usage text and exit 0 — the contract `evals/acceptance.py` and the
+    install smoke lean on.
+    """
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
 def main(argv: list[str] | None = None) -> int:
     speak_utf8()
     argv = list(sys.argv[1:] if argv is None else argv)
     prog = invoked_as()
 
-    # Bare `lore` answers on stdout and exits 0. An agent probing whether the tool
-    # exists must not read a non-zero exit as a broken install.
+    # Bare `lore` on a real terminal opens the console. Elsewhere it answers on
+    # stdout and exits 0: an agent probing whether the tool exists must not read
+    # a non-zero exit as a broken install.
+    if not argv and wants_console():
+        from pagelore import dev
+        return dev.main([])
     if not argv or argv[0] in ("-h", "--help", "help"):
         print(usage(prog))
         return 0

@@ -28,6 +28,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   file searched 15/15, MCP alone 0/15 in September and 3/5 re-measured on the day this
   shipped. The numbers used to keep MCP out of the package; they are an argument for
   a default, not for deciding on someone's behalf.
+- **`lore dev`, the console — and a bare `lore` on a real terminal opens it.**
+  Every line is one lore command, run in its own child process, so output and exit
+  codes are exactly what an agent would see. `--sandbox` runs the same console
+  against a throwaway store, project and HOME, so `write`, `init` and `uninstall`
+  can be rehearsed and then discarded. Anywhere that is not a terminal a bare
+  `lore` still prints usage and exits 0, which is the contract an agent probe leans
+  on.
+- **A local release rehearsal.** `tools/smoke.sh` (a `make smoke` away) builds the
+  wheel, installs it into an isolated environment, and runs the same end-to-end
+  steps CI's install-smoke runs — including the MCP route — against a throwaway
+  HOME, without publishing anything or touching a real install. It also exposes
+  the two-lores trap: `lore doctor` proves the MCP handshake by running `lore mcp`
+  from PATH, so the smoke leads PATH with the freshly installed command, and
+  `evals/acceptance.py` gains `PAGELORE_BIN` to do the same when measuring.
+- **`Makefile`** with `make dev` (editable env, with a hint about the `lore`
+  already on PATH), `make test` (both retrieval paths, then ruff) and `make smoke`.
   `.mcp.json` and Gemini's `settings.json` are merged in place with everything else
   kept; `~/.claude.json` and Codex's `config.toml` go through the harness's own
   `mcp add`, run when it is on PATH and printed when it is not.

@@ -13,3 +13,6 @@ venv/
 # Build artefacts
 dist/
 *.egg-info/
+
+# Claude Code worktree bookkeeping — a checkout of the repo, machine-local
+.claude/
