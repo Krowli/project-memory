@@ -1,9 +1,9 @@
 ---
 slug: panes-opencode-screen
-title: "The screen is opencode-shaped: ask box, transcript and / picker, not a browse"
+title: "The opencode-shaped screen behind lore dev --panes"
 kind: decision
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-09-21
 supersedes:
   - panes-command-field
 sources:
@@ -76,3 +76,16 @@ makes Esc land fast instead of letting curses wait out its ~1 s escape-sequence
 timeout and swallow the next key.
 
 [[dev-panes-prototype]] [[panes-command-field]] [[dev-console-stdlib-only]]
+
+## The bare search asks for the query
+
+Enter on a bare `search` (no query, no flags) used to paint argparse's usage
+line — the "type `search "text"` again" screen. Since this round the screen
+turns the prompt into a query step instead: `search: <query>` renders dim with
+the cursor after the label, Enter runs `search <typed>`, Esc cancels, an empty
+query keeps the step open. The command name is typed once; the ask box's own
+examples already say `search "webgl context lost"`, and the usage line is a
+dead end on a screen that made the user type `search` already. `wizard` on
+`State` rides the command name; `finish_wizard` composes and submits.
+
+[[panes-argparse-systemexit-crash]] [[panes-wide-char-input]]

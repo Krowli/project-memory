@@ -23,16 +23,18 @@ Enter with no query threw the user out of the program entirely.
 
 `run_command` catches `SystemExit` around `cli.main` and turns it into the
 turn's rc (`exc.code` when it is an int, else 1) — the same code a real child
-would exit with, so the fidelity claim holds. Now a query-less `search` paints
-the usage text plus a red `exit 2` and the screen lives on.
+would exit with, so the fidelity claim holds.
+
+A bare `search` (no query, no flags) no longer reaches argparse at all: since
+commit 5503a7c-style screen work it opens the query step (`search: <query>`),
+and only flag-only invocations like a lone `-k` still ride the SystemExit path
+into a red `exit 2` turn.
 
 ## Tests
 
 `test_run_command_turns_argparse_exits_into_rcs` (rc 2 for a query-less
-search, rc 0 for `search --version`) and
-`test_submit_of_a_queryless_search_keeps_the_screen_alive` (a submit turns it
-into an ordinary turn). Also caught there: a card test asserted a hardcoded
-`2026-09-20`, which broke the day the store started dating pages the 21st —
-the assertion now matches a `[score] YYYY-MM-DD` pattern instead.
-
-[[panes-opencode-screen]] [[panes-command-field]]
+search, rc 0 for `search --version`) covers the guard directly; the screen
+alive claim moved to `test_submit_of_a_bare_search_opens_the_query_step`.
+Also caught there: a card test asserted a hardcoded `2026-09-20`, which broke
+the day the store started dating pages the 21st — the assertion now matches a
+`[score] YYYY-MM-DD` pattern instead.

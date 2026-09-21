@@ -204,7 +204,7 @@ lore edit webgl-context-loss                         # in $EDITOR; warns if the 
 lore rm webgl-context-loss                           # delete one, logged
 lore stats --since 2026-09-01                        # what the store has been doing
 lore dev                                             # the same commands in a console (bare `lore` too); --sandbox rehearses on a throwaway store
-lore dev --panes                                     # the opencode-shaped screen: ask box, a transcript of commands run in-process (search results as cards), / for a centred command picker with hints, o opens the top hit, q back to `lore dev`
+lore dev --panes                                     # the opencode-shaped screen: ask box, a transcript of commands run in-process (search results as cards), / for a centred command picker with hints, a bare `search` asks for the query, UTF-8 input, o opens the top hit, q back to `lore dev`
 ```
 
 A bare `lore` prints the command list and exits 0, because an agent checking
@@ -530,7 +530,7 @@ src/pagelore/              the program
   init.py doctor.py        the wizard, and the detector for what has gone silently wrong
   mcp.py                   the same memory as two MCP tools over stdio, when chosen
   dev.py                   the console: the same commands, --sandbox on a throwaway store
-  panes.py                 the opencode-shaped screen behind --panes: ask box, transcript with search hits as cards, a centred / picker with hints; a pure model, curses only for drawing
+  panes.py                 the opencode-shaped screen behind --panes: ask box, transcript with search hits as cards, a centred / picker with hints, a query step for bare search, UTF-8 input; a pure model, curses only for drawing
   instructions.py          renders and refreshes the block an agent reads every turn
   data/AGENT.md            that block — the measured 15/15 text
 npm/                       the Node route: a shim, plus src/pagelore vendored at pack time

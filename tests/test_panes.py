@@ -197,16 +197,49 @@ def test_run_command_turns_argparse_exits_into_rcs(store, monkeypatch, tmp_path)
     assert "pagelore" in text
 
 
-def test_submit_of_a_queryless_search_keeps_the_screen_alive(store, monkeypatch, tmp_path):
-    """Enter on `search` (no query) used to take the whole screen down with a
-    SystemExit; it is now an ordinary rc=2 turn, and the screen lives on."""
+def test_submit_of_a_bare_search_opens_the_query_step(store, monkeypatch, tmp_path):
+    """Enter on a bare `search` pulls the query out as its own step instead of
+    painting argparse's usage — the "type `search "text"` again" screen. The
+    step takes UTF-8 (the corpus is bilingual), and an empty query keeps the
+    step open; nothing runs until a query is typed."""
     _in_project(monkeypatch, tmp_path, store)
-    st = _session("search ")
-    assert panes.submit(st, store, cwd=store.parent)
-    assert len(st.turns) == 1
+    st = _session("search")
+    assert not panes.submit(st, store, cwd=store.parent)  # no turn yet
+    assert st.wizard == "search" and st.field == ""
+    assert not st.turns, "a bare search used to be a dead end; now it asks"
+    # an empty query keeps the step open instead of running the CLI
+    assert not panes.finish_wizard(st, store, cwd=store.parent)
+    assert st.wizard == "search" and not st.turns
+    # the query half accepts what the field accepts — Cyrillic included
+    panes.field_insert(st, "поиск")
+    assert panes.finish_wizard(st, store, cwd=store.parent)
     turn = st.turns[0]
-    assert turn.cmd == "search" and turn.rc == 2
-    assert st.field == "" and st.picker is False
+    assert turn.cmd == "search поиск"
+    assert "no matches" in turn.output
+    assert st.wizard is None and st.field == ""
+    assert st.history[-1] == "search поиск", "the composed run joins history"
+    # flagged or query-ful searches still run straight through, no step
+    st2 = _session("search zeta")
+    assert panes.submit(st2, store, cwd=store.parent)
+    assert st2.turns[0].rc == 0 and st2.wizard is None
+
+
+def test_the_prompt_turns_into_a_query_step_for_a_bare_search(store, monkeypatch, tmp_path):
+    """The input line is `lore > cmd`, but a bare search's step draws a dim
+    `search: <query>` placeholder with the cursor after the label; typing puts
+    the query behind it, no part of the command typed twice."""
+    st = panes.State()
+    text, off, token = panes._field_prompt(st)
+    assert text == "lore > " and off == len("lore > ") and token == panes.NORMAL
+    st.field, st.cursor = "search", len("search")
+    panes.submit(st, store, cwd=store.parent)
+    text, off, token = panes._field_prompt(st)
+    assert text == "search: <query>" and off == len("search: ") and token == panes.DIM
+    panes.field_insert(st, "поиск")
+    text, off, token = panes._field_prompt(st)
+    assert text == "search: поиск"
+    assert off == len("search: ") + len("поиск")
+    assert token == panes.NORMAL, "only the placeholder is dim"
 
 
 def test_submit_appends_a_turn_and_resets_the_field(store, monkeypatch, tmp_path):
@@ -378,7 +411,8 @@ def test_the_screen_draws_like_opencode_and_runs_commands(store, tmp_path):
         os.environ.update({"HOME": str(home), "USERPROFILE": str(home),
                            "PYTHONPATH": str(conftest.REPO / "src"),
                            "PROJECT_MEMORY_NO_REFRESH": "1",
-                           "TERM": "xterm-256color"})
+                           "TERM": "xterm-256color",
+                           "PYTHONUTF8": "1"})
         os.execv(sys.executable, [sys.executable, "-m", "pagelore", "dev", "--panes"])
 
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
@@ -388,7 +422,13 @@ def test_the_screen_draws_like_opencode_and_runs_commands(store, tmp_path):
     def wait_for(token: bytes, deadline: float = 30) -> bool:
         nonlocal seen
         end = time.time() + deadline
-        while token not in seen:
+        while True:
+            # curses redraws incrementally: it can emit CSI sequences (erase to
+            # end of line, cursor moves) right between the bytes of one printed
+            # word. Strip them so text tokens match across redraws.
+            clean = re.sub(rb"\x1b\[[0-9;?]*[A-Za-z]", b"", seen)
+            if token in clean:
+                return True
             if time.time() > end:
                 return False
             if not select.select([fd], [], [], 0.2)[0]:
@@ -400,7 +440,6 @@ def test_the_screen_draws_like_opencode_and_runs_commands(store, tmp_path):
             if not chunk:
                 return False
             seen += chunk
-        return True
 
     try:
         assert wait_for(b"Ask anything"), f"no ask box\n{seen[-400:]!r}"
@@ -423,6 +462,19 @@ def test_the_screen_draws_like_opencode_and_runs_commands(store, tmp_path):
         # a command that owns the terminal is refused from the field, not half-run
         os.write(fd, b"edit\r")
         assert wait_for(b"owns the terminal"), f"the guard did not answer\n{seen[-400:]!r}"
+        # a bare `search` opens the query step — the prompt stops echoing usage —
+        # and the step accepts Cyrillic, which curses delivers byte by byte
+        os.write(fd, b"search\r")
+        assert wait_for(b"<query>"), \
+            f"bare search did not open the query step\n{seen[-400:]!r}"
+        os.write(fd, "поиск".encode())
+        assert wait_for("поиск".encode()), \
+            f"cyrillic input was dropped\n{seen[-400:]!r}"
+        os.write(fd, b"\r")
+        assert wait_for(b"no matches"), \
+            f"the cyrillic search did not run\n{seen[-400:]!r}"
+        # Esc cancels the step back to the plain field, then q quits
+        os.write(fd, b"search\x1b")
         # quit the screen: back to the line editor, then exit cleanly
         os.write(fd, b"q")
         assert wait_for(b"> "), f"no line-editor prompt after quit\n{seen[-400:]!r}"

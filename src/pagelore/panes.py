@@ -11,7 +11,10 @@ shape one to one — because that is the shape that was asked for, twice:
 - once commands have run: a transcript — every command echoed like the prompt
   with its output underneath — and the field shrunk to the bottom line. `/` (or
   ctrl+p) *always* opens a centred command picker with one hint per command;
-  `o` opens the top hit of the last search; `↑` walks history.
+  `o` opens the top hit of the last search; `↑` walks history. A bare `search`
+  (Enter with no query) turns the prompt into a query step — `search: <query>` —
+  instead of echoing argparse's usage, and the field takes UTF-8 (the store's
+  corpus is bilingual), including in the picker's filter.
 
 Commands run in-process through the same `cli.main` the CLI runs, so the output
 and the `exit N` codes are bit-for-bit what an agent would see from the same
@@ -132,6 +135,11 @@ class State:
     hits: list[Page] = dc_field(default_factory=list)
     follow: bool = True
     view_top: int = 0
+    # A bare `search` (Enter with no query) came in: the screen is asking for
+    # the query as its own step — prompt "search: <query>", Enter runs
+    # `search <query>`, Esc cancels. The command name riding here is what the
+    # line editor's `lore >` prompt becomes while the step is open.
+    wizard: str | None = None
 
 
 def query_rows(store: Path, query: str) -> list[Page]:
@@ -143,7 +151,7 @@ def query_rows(store: Path, query: str) -> list[Page]:
 
 def field_insert(state: State, ch: str) -> None:
     state.field = state.field[:state.cursor] + ch + state.field[state.cursor:]
-    state.cursor += 1
+    state.cursor += len(ch)
 
 
 def field_backspace(state: State) -> None:
@@ -289,13 +297,20 @@ def submit(state: State, store: Path, *, cwd: Path,
 
     A plain `search` (query, no flags) also remembers its ranked hits, so the
     transcript can draw them as cards and `o` can open the top one without the
-    slug ever being retyped.
+    slug ever being retyped. A *bare* `search` (no query, no flags) runs
+    nothing: it opens the query step, so the user is asked for the query —
+    not handed argparse's usage after already having typed `search` once.
     """
     cmd = state.field.strip()
     if not cmd:
         return False
-    rc, text = run_command(state, store, cwd=cwd, sandbox=sandbox, home=home)
     name, _, rest = cmd.partition(" ")
+    if name == "search" and not rest.strip():
+        state.wizard = "search"
+        state.field, state.cursor = "", 0
+        state.picker = False
+        return False
+    rc, text = run_command(state, store, cwd=cwd, sandbox=sandbox, home=home)
     ranked: list[tuple[float, Page]] = []
     if name == "search" and rest.strip() and not rest.strip().startswith("-"):
         ranked = search(rest.strip(), store, k=SEARCH_K)
@@ -309,6 +324,24 @@ def submit(state: State, store: Path, *, cwd: Path,
     if not state.history or state.history[-1] != cmd:
         state.history.append(cmd)
     state.hist_idx = None
+    return True
+
+
+def finish_wizard(state: State, store: Path, *, cwd: Path,
+                  sandbox: Path | None = None, home: Path | None = None) -> bool:
+    """Enter while the query step is open: run `search <typed query>`.
+
+    An empty query keeps the step open — the CLI's usage would be a dead end
+    here, and the screen has already made the user type the command name once.
+    """
+    rest = state.field.strip()
+    if not rest:
+        return False
+    name = state.wizard
+    state.wizard = None
+    state.field = f"{name} {rest}"
+    state.cursor = len(state.field)
+    submit(state, store, cwd=cwd, sandbox=sandbox, home=home)
     return True
 
 
@@ -528,6 +561,49 @@ def _draw_picker(stdscr, state: State, rows: int, cols: int, *,
     stdscr.addstr(top + 2 + bodys + footer, x, "╰" + edge + "╯")
 
 
+def _wide_char(stdscr, first: int) -> str:
+    """Assemble one multibyte UTF-8 character from raw terminal bytes.
+
+    curses hands each byte of a multibyte character to `getch` as a separate
+    int ≥ 128, so a Cyrillic letter arrives as two or three raw bytes. The
+    continuation bytes (0x80–0xBF) are drained with a short timeout: the last
+    character of a burst must decode as soon as the terminal's burst ends, not
+    one keystroke later (a blocked read would hold the final letter back until
+    the next key). A byte that is not a continuation is pushed back for the
+    next loop pass — a fast ASCII key can arrive mid-burst.
+    """
+    raw = bytearray([first])
+    stdscr.timeout(30)
+    try:
+        while len(raw) < 4:
+            nxt = stdscr.getch()
+            if nxt == -1:
+                break  # burst over: the character is complete
+            if 128 <= nxt <= 191:
+                raw.append(nxt)
+            else:
+                curses.ungetch(nxt)
+                break
+    finally:
+        stdscr.timeout(-1)  # back to blocking for the next key
+    return bytes(raw).decode("utf-8", "replace")
+
+
+def _field_prompt(state: State) -> tuple[str, int, int]:
+    """The input line: `lore > cmd`, or the query step's `search: <query>`.
+
+    Returns (text, cursor offset inside that text, attribute token). The
+    placeholder renders dim with the cursor right after its label, so a bare
+    `search` asks for the query without ever echoing argparse's usage.
+    """
+    if state.wizard is not None:
+        lead = f"{state.wizard}: "
+        if not state.field:
+            return f"{lead}<query>", len(lead), DIM
+        return f"{lead}{state.field}", len(lead) + state.cursor, NORMAL
+    return f"lore > {state.field}", len("lore > ") + state.cursor, NORMAL
+
+
 def _draw_ask(stdscr, store: Path, state: State, rows: int, cols: int) -> None:
     """The empty state, one to one with opencode: logo, ask box, hint bar."""
     if cols >= 46:
@@ -551,9 +627,9 @@ def _draw_ask(stdscr, store: Path, state: State, rows: int, cols: int) -> None:
 
     ask = "Ask anything…   ·   search \"webgl context lost\" · list · write"
     stdscr.addstr(box_y + 1, box_x + 2, _truncate(ask, box_w - 4), curses.A_DIM)
-    prompt = f"lore > {state.field}"
-    stdscr.addstr(box_y + 2, box_x + 2, _truncate(prompt, box_w - 4))
-    stdscr.move(box_y + 2, min(box_x + box_w - 3, box_x + 2 + len("lore > ") + state.cursor))
+    prompt, off, token = _field_prompt(state)
+    stdscr.addstr(box_y + 2, box_x + 2, _truncate(prompt, box_w - 4), _attr(token))
+    stdscr.move(box_y + 2, min(box_x + box_w - 3, box_x + 2 + off))
     keys = "/ commands · o opens the top hit · ↑ history · q quit"
     stdscr.addstr(box_y + 3, box_x + 2, _truncate(keys, box_w - 4), curses.A_DIM)
 
@@ -580,9 +656,9 @@ def _draw_chat(stdscr, state: State, rows: int, cols: int) -> None:
     if state.picker:
         _draw_picker(stdscr, state, rows, cols, bottom=True)
 
-    prompt = f"lore > {state.field}"
-    stdscr.addstr(rows - 1, 0, _truncate(prompt, cols - 1))
-    stdscr.move(rows - 1, min(cols - 2, len("lore > ") + state.cursor))
+    prompt, off, token = _field_prompt(state)
+    stdscr.addstr(rows - 1, 0, _truncate(prompt, cols - 1), _attr(token))
+    stdscr.move(rows - 1, min(cols - 2, off))
 
 
 def _draw(stdscr, store: Path, state: State) -> None:
@@ -623,6 +699,14 @@ def _main(stdscr, store: Path, *, prog: str, cwd: Path,
         key = stdscr.getch()
         if key == curses.KEY_RESIZE:
             continue
+        if 128 <= key < 256:
+            # A multibyte character (the store's corpus is bilingual, and the
+            # query step must take Cyrillic): curses sent one raw byte per
+            # `getch`, so read the sequence and insert the decoded letter. It
+            # lands in the field whether the picker is open (its filter reads
+            # the field) or not — ASCII keys keep their two home-grown paths.
+            field_insert(state, _wide_char(stdscr, key))
+            continue
         if state.picker:
             if key in (ord("\n"), 10, 13):
                 picker_fill(state)
@@ -646,7 +730,8 @@ def _main(stdscr, store: Path, *, prog: str, cwd: Path,
             if state.cursor < len(state.field):
                 state.field = (state.field[:state.cursor]
                                + state.field[state.cursor + 1:])
-        elif key == 27:  # Esc clears the field, not the session
+        elif key == 27:  # Esc cancels the query step, then clears the field
+            state.wizard = None
             state.field, state.cursor = "", 0
         elif key in (1, 5):  # Ctrl-A / Ctrl-E
             state.cursor = 0 if key == 1 else len(state.field)
@@ -656,12 +741,15 @@ def _main(stdscr, store: Path, *, prog: str, cwd: Path,
             field_cursor(state, -1)
         elif key == curses.KEY_RIGHT:
             field_cursor(state, 1)
-        elif key in (16, ord("/")):  # ctrl+p or `/`: the command picker, always
+        elif key in (16, ord("/")) and state.wizard is None:  # ctrl+p or `/`
             open_picker(state)
         elif key in (ord("\n"), 10, 13):
-            submit(state, store, cwd=cwd, sandbox=sandbox, home=home)
+            if state.wizard is not None:
+                finish_wizard(state, store, cwd=cwd, sandbox=sandbox, home=home)
+            else:
+                submit(state, store, cwd=cwd, sandbox=sandbox, home=home)
         elif key == ord("o"):
-            if state.field:
+            if state.field or state.wizard is not None:
                 field_insert(state, "o")
             else:
                 open_top_hit(state, store, cwd=cwd, sandbox=sandbox, home=home)
@@ -673,7 +761,9 @@ def _main(stdscr, store: Path, *, prog: str, cwd: Path,
                         for t in state.turns)
             scroll_transcript(state, -1 if key == curses.KEY_PPAGE else 1, height, total)
         elif key in (ord("q"), ord("Q")):
-            if not state.field:
+            if state.wizard is not None:
+                field_insert(state, "q")  # a query may contain q; Esc cancels
+            elif not state.field:
                 return
         elif 32 <= key <= 126:
             field_insert(state, chr(key))

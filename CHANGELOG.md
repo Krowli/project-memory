@@ -44,7 +44,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hint per command, a filter, j/k and ↑/↓ — even when the field is not empty,
   `o` opens the top hit of the last search (the slug is never retyped),
   `↑` walks history, PgUp/PgDn scroll the transcript, `q` is back to the line
-  editor. Transcripts of a plain `search` render readably, not as the CLI's
+  editor. A bare `search` (Enter with no query) turns the prompt into a query
+  step — `search: <query>`, Enter runs it, Esc cancels — instead of echoing
+  the CLI's usage, and the field takes full UTF-8, so a query over the
+  bilingual corpus types like any other text. Transcripts of a plain `search`
+  render readably, not as the CLI's
   wrapped prose: one card per hit, slug and title on the line with the score
   and date right-aligned, and the matched window dim underneath — the raw bytes
   are still stored on the turn, so a flagged search falls straight back to the
