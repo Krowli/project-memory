@@ -26,15 +26,16 @@ turn's rc (`exc.code` when it is an int, else 1) — the same code a real child
 would exit with, so the fidelity claim holds.
 
 A bare `search` (no query, no flags) no longer reaches argparse at all: since
-commit 5503a7c-style screen work it opens the query step (`search: <query>`),
-and only flag-only invocations like a lone `-k` still ride the SystemExit path
-into a red `exit 2` turn.
+later screen work it is intercepted in `submit`, which leaves the field as
+`lore > search ` and runs nothing, so the usage screen is unreachable from the
+field except by the rarest flag-only invocation (a lone `-k`), which still
+rides the SystemExit path into a red `exit 2` turn.
 
 ## Tests
 
 `test_run_command_turns_argparse_exits_into_rcs` (rc 2 for a query-less
 search, rc 0 for `search --version`) covers the guard directly; the screen
-alive claim moved to `test_submit_of_a_bare_search_opens_the_query_step`.
+alive claim lives in `test_submit_of_a_bare_search_waits_for_the_query`.
 Also caught there: a card test asserted a hardcoded `2026-09-20`, which broke
 the day the store started dating pages the 21st — the assertion now matches a
 `[score] YYYY-MM-DD` pattern instead.

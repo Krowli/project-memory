@@ -79,13 +79,28 @@ timeout and swallow the next key.
 
 ## The bare search asks for the query
 
+As the user reports keep showing, an intermediate "query step" (a `search:
+<query>` placeholder) read as an instruction to retype `search <word>`, so it
+is gone. Today a bare `search` (no query, no flags) runs nothing and leaves
+the field as `lore > search ` — cursor after the space: the user's own text
+never leaves the main screen, only the query is missing, Enter again is a
+no-op, and no argparse usage ever dumps. `submit` rewrites the field instead
+of toggling a mode, so there is no second screen to be asked to repeat.
+With a query already appended (`search <word>` + Enter) it runs straight
+through, as always.
+
+[[panes-argparse-systemexit-crash]] [[panes-wide-char-input]]
+
+## A bare search waits for the query, on the same line
+
 Enter on a bare `search` (no query, no flags) used to paint argparse's usage
-line — the "type `search "text"` again" screen. Since this round the screen
-turns the prompt into a query step instead: `search: <query>` renders dim with
-the cursor after the label, Enter runs `search <typed>`, Esc cancels, an empty
-query keeps the step open. The command name is typed once; the ask box's own
-examples already say `search "webgl context lost"`, and the usage line is a
-dead end on a screen that made the user type `search` already. `wizard` on
-`State` rides the command name; `finish_wizard` composes and submits.
+line — the "type `search "text"` again" screen. An intermediate version then
+opened a "query step" (`search: <query>` placeholder); the placeholder started
+with the word `search`, read as an instruction to type `search <word>` again,
+and was dropped for this one: a bare `search` leaves the field as `lore >
+search ` (cursor after the space) and runs nothing. The user's own text never
+leaves the main screen, only the query is missing, Enter again is a no-op, and
+there is no second screen to be asked to repeat. `submit` does this by
+rewriting the field, not by toggling a mode.
 
 [[panes-argparse-systemexit-crash]] [[panes-wide-char-input]]

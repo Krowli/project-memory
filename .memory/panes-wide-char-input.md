@@ -31,8 +31,9 @@ now advances the cursor by `len(ch)`.
 ## Tests
 
 `test_the_screen_draws_like_opencode_and_runs_commands` types a Cyrillic
-query into the query step and asserts it echoes and runs; `wait_for` strips
-CSI sequences first, because ncurses can emit erase-to-EOL between the bytes
-of one printed word. Unit coverage: a Cyrillic query composes and runs.
+query into the field left behind by a bare search and asserts it echoes and
+runs; `wait_for` strips CSI sequences first, because ncurses can emit
+erase-to-EOL between the bytes of one printed word. Unit coverage: a Cyrillic
+query composes and runs.
 
 [[panes-opencode-screen]]

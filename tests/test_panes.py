@@ -197,49 +197,32 @@ def test_run_command_turns_argparse_exits_into_rcs(store, monkeypatch, tmp_path)
     assert "pagelore" in text
 
 
-def test_submit_of_a_bare_search_opens_the_query_step(store, monkeypatch, tmp_path):
-    """Enter on a bare `search` pulls the query out as its own step instead of
-    painting argparse's usage — the "type `search "text"` again" screen. The
-    step takes UTF-8 (the corpus is bilingual), and an empty query keeps the
-    step open; nothing runs until a query is typed."""
+def test_submit_of_a_bare_search_waits_for_the_query(store, monkeypatch, tmp_path):
+    """Enter on a bare `search` used to paint argparse's usage — and then, in
+    an over-clever fix, a second screen asking for the query again. Now it runs
+    nothing and leaves the user's own text on the main screen: `lore > search `
+    with the cursor after the space, so only the query is missing."""
     _in_project(monkeypatch, tmp_path, store)
     st = _session("search")
     assert not panes.submit(st, store, cwd=store.parent)  # no turn yet
-    assert st.wizard == "search" and st.field == ""
-    assert not st.turns, "a bare search used to be a dead end; now it asks"
-    # an empty query keeps the step open instead of running the CLI
-    assert not panes.finish_wizard(st, store, cwd=store.parent)
-    assert st.wizard == "search" and not st.turns
-    # the query half accepts what the field accepts — Cyrillic included
+    assert st.field == "search " and st.cursor == len("search ")
+    assert not st.turns, "a bare search is a dead end no more, but also no turn yet"
+    # Enter again with still no query is a harmless no-op, never argparse's usage
+    assert not panes.submit(st, store, cwd=store.parent)
+    assert st.field == "search " and not st.turns
+    # the user only adds the query — Cyrillic included — and then Enter runs it
     panes.field_insert(st, "поиск")
-    assert panes.finish_wizard(st, store, cwd=store.parent)
+    assert st.field == "search поиск"
+    assert panes.submit(st, store, cwd=store.parent)
     turn = st.turns[0]
     assert turn.cmd == "search поиск"
     assert "no matches" in turn.output
-    assert st.wizard is None and st.field == ""
+    assert st.field == ""
     assert st.history[-1] == "search поиск", "the composed run joins history"
-    # flagged or query-ful searches still run straight through, no step
+    # flagged or query-ful searches still run straight through, no waiting
     st2 = _session("search zeta")
     assert panes.submit(st2, store, cwd=store.parent)
-    assert st2.turns[0].rc == 0 and st2.wizard is None
-
-
-def test_the_prompt_turns_into_a_query_step_for_a_bare_search(store, monkeypatch, tmp_path):
-    """The input line is `lore > cmd`, but a bare search's step draws a dim
-    `search: <query>` placeholder with the cursor after the label; typing puts
-    the query behind it, no part of the command typed twice."""
-    st = panes.State()
-    text, off, token = panes._field_prompt(st)
-    assert text == "lore > " and off == len("lore > ") and token == panes.NORMAL
-    st.field, st.cursor = "search", len("search")
-    panes.submit(st, store, cwd=store.parent)
-    text, off, token = panes._field_prompt(st)
-    assert text == "search: <query>" and off == len("search: ") and token == panes.DIM
-    panes.field_insert(st, "поиск")
-    text, off, token = panes._field_prompt(st)
-    assert text == "search: поиск"
-    assert off == len("search: ") + len("поиск")
-    assert token == panes.NORMAL, "only the placeholder is dim"
+    assert st2.turns[0].rc == 0 and st2.field == ""
 
 
 def test_submit_appends_a_turn_and_resets_the_field(store, monkeypatch, tmp_path):
@@ -462,18 +445,17 @@ def test_the_screen_draws_like_opencode_and_runs_commands(store, tmp_path):
         # a command that owns the terminal is refused from the field, not half-run
         os.write(fd, b"edit\r")
         assert wait_for(b"owns the terminal"), f"the guard did not answer\n{seen[-400:]!r}"
-        # a bare `search` opens the query step — the prompt stops echoing usage —
-        # and the step accepts Cyrillic, which curses delivers byte by byte
+        # a bare `search` + Enter runs nothing and leaves the field as the query's
+        # waiting room — no usage dump, no second screen: only the query is
+        # missing, and it accepts Cyrillic, which curses delivers byte by byte
         os.write(fd, b"search\r")
-        assert wait_for(b"<query>"), \
-            f"bare search did not open the query step\n{seen[-400:]!r}"
         os.write(fd, "поиск".encode())
         assert wait_for("поиск".encode()), \
             f"cyrillic input was dropped\n{seen[-400:]!r}"
         os.write(fd, b"\r")
         assert wait_for(b"no matches"), \
             f"the cyrillic search did not run\n{seen[-400:]!r}"
-        # Esc cancels the step back to the plain field, then q quits
+        # Esc still clears the pending field, then q quits
         os.write(fd, b"search\x1b")
         # quit the screen: back to the line editor, then exit cleanly
         os.write(fd, b"q")
