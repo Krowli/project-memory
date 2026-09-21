@@ -265,7 +265,14 @@ def run_command(state: State, store: Path, *, cwd: Path,
         if cwd != old_cwd:
             os.chdir(cwd)
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            rc = cli.main(argv)
+            try:
+                rc = cli.main(argv)
+            except SystemExit as exc:
+                # argparse validation (a query-less `search`, a slug-less `rm`,
+                # `--version`, `--help`) raises SystemExit instead of returning.
+                # A child would just exit with that code; in-process it must
+                # become the turn's rc, or the whole screen dies with it.
+                rc = exc.code if isinstance(exc.code, int) else 1
     finally:
         os.chdir(old_cwd)
         for k in saved:

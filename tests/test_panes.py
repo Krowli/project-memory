@@ -14,6 +14,7 @@ is fidelity, not a shortcut. What must own the terminal (the MCP server, the
 wizard, `edit`) is refused from the field, never half-run.
 """
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -184,6 +185,30 @@ def test_run_command_matches_a_real_child(store, monkeypatch, tmp_path):
     assert text == child_text, "the field must show exactly what an agent would see"
 
 
+def test_run_command_turns_argparse_exits_into_rcs(store, monkeypatch, tmp_path):
+    """argparse validation (a query-less `search`) raises SystemExit instead of
+    returning; in-process that would kill the whole screen, so it must land as
+    the turn's rc — exactly the code a child process would exit with."""
+    _st, rc, text = _run_field("search", store, monkeypatch, tmp_path)
+    assert rc == 2
+    assert "give query words" in text
+    _st, rc, text = _run_field("search --version", store, monkeypatch, tmp_path)
+    assert rc == 0, "--version exits 0 through the same SystemExit, not as a crash"
+    assert "pagelore" in text
+
+
+def test_submit_of_a_queryless_search_keeps_the_screen_alive(store, monkeypatch, tmp_path):
+    """Enter on `search` (no query) used to take the whole screen down with a
+    SystemExit; it is now an ordinary rc=2 turn, and the screen lives on."""
+    _in_project(monkeypatch, tmp_path, store)
+    st = _session("search ")
+    assert panes.submit(st, store, cwd=store.parent)
+    assert len(st.turns) == 1
+    turn = st.turns[0]
+    assert turn.cmd == "search" and turn.rc == 2
+    assert st.field == "" and st.picker is False
+
+
 def test_submit_appends_a_turn_and_resets_the_field(store, monkeypatch, tmp_path):
     """Enter: the command becomes a transcript turn, the field empties, and the
     command joins the history; an empty field submits nothing."""
@@ -244,7 +269,8 @@ def test_render_turn_search_renders_hits_as_cards(store, monkeypatch, tmp_path):
     assert cards and cards[0][0] == panes.NORMAL
     assert any(tok == panes.DIM and ln.strip() for tok, ln in lines), \
         "the matched window is dim underneath the card"
-    assert any("[" in ln and "2026-09-20" in ln for tok, ln in lines), \
+    assert any(re.search(r"\[\d+\.\d+\] \d{4}-\d{2}-\d{2}", ln)
+               for tok, ln in lines), \
         "score and date ride on the right of a card"
     for tok, ln in lines:
         assert len(ln) <= 60 or " " not in ln.strip(), \
