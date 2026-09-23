@@ -13,6 +13,8 @@ in-process output is compared here with a real child's, byte for byte: the field
 is fidelity, not a shortcut. What must own the terminal (the MCP server, the
 wizard, `edit`) is refused from the field, never half-run.
 """
+from __future__ import annotations
+
 import os
 import re
 import subprocess
@@ -181,7 +183,9 @@ def test_run_command_matches_a_real_child(store, monkeypatch, tmp_path):
     child = subprocess.run([*conftest.LORE, "list"], cwd=store.parent,
                            capture_output=True, env=conftest.lore_env())
     assert rc == child.returncode == 0
-    child_text = (child.stdout + child.stderr).decode("utf-8", "replace").rstrip("\n")
+    # A Windows child's text-mode stdout writes \r\n; the bytes it means are the same.
+    child_text = (child.stdout + child.stderr).decode("utf-8", "replace")
+    child_text = child_text.replace("\r\n", "\n").rstrip("\n")
     assert text == child_text, "the field must show exactly what an agent would see"
 
 

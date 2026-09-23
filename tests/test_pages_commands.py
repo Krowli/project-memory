@@ -90,6 +90,8 @@ def test_edit_that_leaves_the_page_thin_says_it_will_be_skipped(populated, tmp_p
     """The one way a hand edit goes wrong silently: a page cut below the floor is
     not refused, it is skipped by every search from then on. The editor cannot
     know the floor, so the command says it as the editor closes."""
+    if sys.platform == "win32":
+        pytest.skip("the fake editor is a shell script")
     script = tmp_path / "cut.sh"
     script.write_text("#!/bin/sh\nprintf -- '---\\nslug: webgl-context-loss\\n---\\n\\nshort\\n' "
                       "> \"$1\"\n", encoding="utf-8")

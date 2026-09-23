@@ -84,7 +84,7 @@ def short(path) -> str:
     """
     text = str(path)
     home = str(Path.home())
-    return "~" + text[len(home):] if text.startswith(home + "/") else text
+    return "~" + text[len(home):] if text.startswith((home + "/", home + "\\")) else text
 
 
 def _project_root() -> Path | None:

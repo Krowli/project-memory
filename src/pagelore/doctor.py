@@ -123,7 +123,9 @@ def _same_install(command: str, here: str) -> tuple[bool, str]:
         if note:
             detail += f": {note[0]}"
         return False, detail
-    match = re.search(r", ([^,)]+)\)$", (proc.stdout or "").strip())
+    # The directory is everything after "python X.Y.Z, " — it may itself hold
+    # parentheses, as `C:\Program Files (x86)\...` does on Windows.
+    match = re.search(r", python [^,]+, (.+)\)$", (proc.stdout or "").strip())
     theirs = match.group(1) if match else None
     if theirs != here:
         theirs_note = theirs or "prints no install directory"

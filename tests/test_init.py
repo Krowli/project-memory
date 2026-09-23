@@ -426,6 +426,19 @@ def test_doctor_flags_a_lore_on_path_that_is_not_this_install(machine, monkeypat
     assert "/elsewhere/install/pagelore" in rows["command"]["detail"]
 
 
+def test_doctor_reads_an_install_directory_with_parentheses(machine, monkeypatch):
+    """A pipx install on Windows lives under `C:\\Program Files (x86)\\...`; the
+    parse took the `)` of `(x86)` for the end of the line and saw no directory."""
+    where = r"C:\Program Files (x86)\pipx\venvs\pagelore\Lib\site-packages\pagelore"
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: "/elsewhere/bin/lore")
+    monkeypatch.setattr(doctor.subprocess, "run", lambda argv, *a, **k:
+                        subprocess.CompletedProcess(
+                            argv, 0, f"pagelore 9.9.9 (lore, python 3.13.15, {where})", ""))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert "prints no install directory" not in rows["command"]["detail"]
+    assert where in rows["command"]["detail"]
+
+
 def test_doctor_accepts_a_command_that_is_this_install(machine, monkeypatch):
     """The parse stays honest to the real version line, so the match probe is fed
     `version_line` itself — a drift in the format fails here, not in the field."""
