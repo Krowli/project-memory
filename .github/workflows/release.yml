@@ -23,8 +23,8 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
@@ -54,7 +54,7 @@ jobs:
           test -s RELEASE_BODY.md || { echo "::error::the changelog section is empty"; exit 1; }
           cat RELEASE_BODY.md
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-body
           path: RELEASE_BODY.md
@@ -64,8 +64,8 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - uses: actions/setup-node@v5
@@ -94,7 +94,7 @@ jobs:
         working-directory: npm
         run: npm pack
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: |
@@ -111,7 +111,7 @@ jobs:
     permissions:
       id-token: write          # trusted publishing: no API token anywhere
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: .
@@ -143,7 +143,7 @@ jobs:
       contents: read
       id-token: write          # provenance, so the tarball is traceable to this run
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       # Node 24 because trusted publishing needs npm 11.5.1 and Node 22.14; the 22
       # line in the tool cache ships npm 10 and would fall back to asking for a token.
       - uses: actions/setup-node@v5
@@ -206,10 +206,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-body
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: .
