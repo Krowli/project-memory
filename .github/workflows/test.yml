@@ -101,7 +101,7 @@ jobs:
           cd /tmp/fromsdist && python -m build --wheel
           python -c "import glob; print(glob.glob('dist/*.whl'))"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
