@@ -24,7 +24,8 @@ Claude Code, Gemini CLI, Codex CLI and Cursor; see [connecting agents](agents.md
 
 **Instruction file or MCP?**
 The file is the default because it is the arm that has never missed on Claude
-Code; MCP alone at default settings searched 0/15, later 3/5. You can have both.
+Code; MCP alone at default settings searched 0/15, later 3/5 and 4/10, and 10/10
+once the server sent its own instructions (0.5.1). You can have both.
 See [MCP](mcp.md#file-mcp-or-both).
 
 **Does the agent use it without being told?**

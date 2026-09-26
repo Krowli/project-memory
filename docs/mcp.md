@@ -21,6 +21,17 @@ protocol version `2025-06-18`, server name `project-memory`. stdout carries
 JSON-RPC and nothing else; the server prints one line on stderr naming the store
 it serves.
 
+## What the server tells the agent on connect
+
+The `initialize` reply carries `instructions`, the field the MCP specification
+describes as a hint to the model that a client may add to its system prompt. It is
+not written separately: it is the paragraphs of the instruction block
+(`src/pagelore/data/AGENT.md`) marked `<!-- mcp -->`, with the two that introduce a
+command naming `memory_search` and `memory_write` instead. So an agent that has
+only the server — no instruction file — is told when to search and when to write,
+in the words the file uses, and the two cannot drift. About 1.2k characters;
+`python3 evals/mcp_probe.py --handshake` prints what a client receives.
+
 ## Which store it serves
 
 A stdio server is promised no working directory, so `lore mcp` resolves the store
@@ -104,7 +115,8 @@ Measured on Claude Code, fifteen sessions per arm on a task-shaped prompt
 | How the agent learns the memory exists | Searched before answering |
 |---|---|
 | one `@path` line in the project's `CLAUDE.md` | 15 / 15 |
-| MCP tools, Claude Code's default settings | 0 / 15 (re-measured later: 3 / 5) |
+| MCP tools, Claude Code's default settings | 0 / 15 (re-measured later: 3 / 5, then 4 / 10) |
+| the same, with the server's `instructions` (0.5.1) | 10 / 10 |
 | MCP tools, `ENABLE_TOOL_SEARCH=false` | 15 / 15 |
 | MCP tools plus the `@path` line | 15 / 15 |
 
@@ -120,6 +132,7 @@ of the file.
 
 ## Sources
 
+- MCP lifecycle, `initialize`: https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle
 - Claude Code MCP: https://code.claude.com/docs/en/mcp
 - Gemini CLI MCP servers: https://geminicli.com/docs/tools/mcp-server/
 - Codex MCP: https://learn.chatgpt.com/docs/extend/mcp

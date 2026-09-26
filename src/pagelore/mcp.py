@@ -15,7 +15,9 @@ alone, never better. Re-measured on the day it shipped, on a later Claude Code, 
 default arm was 3 in 5: no longer zero, not yet reliable. So the file stays the
 default `lore init` recommends, and this is the choice a person makes with the
 numbers in front of them. The probe stays as a wrapper so the measurement can be
-re-run.
+re-run. Since 0.5.1 the initialize reply also carries `instructions`, the block's own
+paragraphs on when to search and when to write; the same arm went from 4 in 10 to
+10 in 10.
 
 Two rules the transport imposes, both easy to break silently:
 
@@ -38,7 +40,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from . import __version__
+from . import __version__, instructions
 from . import search as memory_search
 from . import write as memory_write
 from .cli import add_version
@@ -162,6 +164,10 @@ def handle(message: dict, store: Path | None = None) -> dict | None:
             "protocolVersion": PROTOCOL,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": SERVER_NAME, "version": __version__},
+            # The spec's "hint to the model", which a client MAY add to the system
+            # prompt: the instruction block's own paragraphs, so an agent with only
+            # this server connected is told when to search and when to write.
+            "instructions": instructions.mcp_instructions(),
         }}
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": mid, "result": {"tools": TOOLS}}

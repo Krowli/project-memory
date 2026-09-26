@@ -6,6 +6,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`lore mcp` tells the agent when to use it.** The `initialize` reply now carries
+  `instructions` — the MCP field a client may add to the system prompt — so an agent
+  with only the server connected, and no instruction file, is told to search before
+  stating anything about the project and to write after a decision or a non-obvious
+  fix. The text is the instruction block's own paragraphs, marked in
+  `data/AGENT.md` and naming `memory_search` and `memory_write` in place of the shell
+  commands, so the two routes cannot drift; about 1.2k characters. Measured on
+  Claude Code's default settings, MCP alone: 4/10 sessions searched before
+  answering without it, 10/10 with it. `evals/mcp_probe.py --handshake` shows what
+  a client receives.
+
 ## [0.5.0] - 2026-09-26
 
 ### Added

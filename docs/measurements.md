@@ -171,6 +171,13 @@ arm that has never missed. What would move the default is a harness that shows
 MCP tools by default and has no instruction file worth writing into; the
 acceptance run is there to re-measure rather than re-argue.
 
+Then the server started saying when to use it (0.5.1): the `initialize` reply
+carries `instructions` derived from the block's own paragraphs. Same acceptance
+arm, MCP alone at default settings, Claude Code 2.1.281, ten sessions each on
+2026-09-26: **4 / 10** without the instructions, **10 / 10** with them. One harness
+version and ten runs per arm, so the default stays the file until a second harness
+or the full three arms say the same.
+
 
 ## Speed, and the cost of the gate
 

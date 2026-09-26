@@ -67,6 +67,12 @@ def packaged() -> str:
     return (Path(__file__).resolve().parent / "data" / BLOCK).read_text(encoding="utf-8")
 
 
+# A line `<!-- mcp -->` or `<!-- mcp <tool> -->` in the packaged block marks the
+# paragraph under it for the MCP server's `instructions`. Stripped from the file an
+# agent reads; see `mcp_instructions`.
+_MCP_MARK = re.compile(r"^<!-- mcp(?: (\w+))? -->\n", re.M)
+
+
 def render(cmd: str = "lore") -> str:
     """The block as this install would write it.
 
@@ -77,8 +83,30 @@ def render(cmd: str = "lore") -> str:
     The command substitution is word-bounded, so `PMEOF` and `pagelore` are
     untouched — `pagelore` has no word boundary before its `lore`.
     """
-    text = packaged().replace("{version}", __version__)
+    text = _MCP_MARK.sub("", packaged()).replace("{version}", __version__)
     return text if cmd == "lore" else re.sub(r"\blore\b", cmd, text)
+
+
+def mcp_instructions(block: str | None = None) -> str:
+    """What `lore mcp` sends in its initialize result: the marked paragraphs of the
+    same block, so an agent with only the server connected is told what the file
+    route tells it, and the two cannot drift.
+
+    Not the whole block. That hands the agent shell commands a tool user has no use
+    for, and it runs past 3k characters where a client puts this text in front of
+    the model beside every other server's. A paragraph marked with a tool name ends
+    in the colon that introduced the command; here it names the tool instead.
+    """
+    out = []
+    for para in (packaged() if block is None else block).split("\n\n"):
+        found = _MCP_MARK.match(para)
+        if not found:
+            continue
+        text, tool = para[found.end():].strip(), found.group(1)
+        if tool:
+            text = text.rstrip(":") + f" with `{tool}`."
+        out.append(text)
+    return "\n\n".join(out)
 
 
 def install(cmd: str = "lore") -> Path:

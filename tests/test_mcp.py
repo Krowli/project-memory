@@ -13,7 +13,7 @@ import conftest
 import pytest
 
 import pagelore
-from pagelore import mcp, write
+from pagelore import instructions, mcp, write
 
 BODY = ("## Cause\n\nThe renderer drops its context when the display sleeps, which is "
         "invisible from the code and cost a day to find; recorded so the next agent "
@@ -57,6 +57,31 @@ def test_initialize_names_the_protocol_and_the_server(project):
     assert result["protocolVersion"] == mcp.PROTOCOL
     assert result["serverInfo"]["name"] == mcp.SERVER_NAME == "project-memory"
     assert result["serverInfo"]["version"] == pagelore.__version__
+
+
+def test_initialize_tells_the_agent_when_to_use_each_tool(project):
+    """An agent with only the server connected has no instruction file; the
+    `instructions` of the initialize result are what tell it when to search and when
+    to write. Kept short: a client sets this beside every other server's."""
+    text = mcp.handle(rpc("initialize", {}))["result"]["instructions"]
+    assert "search first with `memory_search`" in text
+    assert "write the page with `memory_write`" in text
+    assert "Before stating anything about this project" in text
+    assert 500 < len(text) <= 2500
+    assert "lore " not in text and "```" not in text, "a shell command reached a tool user"
+
+
+def test_the_instructions_are_read_from_the_block_not_written_twice():
+    """Two copies of one contract drift. Changing a marked paragraph of the block
+    changes what the server says; an unmarked one does not reach it."""
+    block = instructions.packaged()
+    changed = block.replace("Treat them as the record", "Treat them as the ledger", 1)
+    assert changed != block
+    assert "the ledger" in instructions.mcp_instructions(changed)
+    assert "the ledger" not in instructions.mcp_instructions(block)
+    assert "Open a full page" in block
+    assert "Open a full page" not in instructions.mcp_instructions(block)
+    assert "<!-- mcp" not in instructions.render(), "a marker leaked into the file"
 
 
 def test_tools_list_is_the_two_measured_tools(project):

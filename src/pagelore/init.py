@@ -601,7 +601,7 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
         if not via and interactive:
             via = tuple(menu.ask(
                 "How should the agent reach it?",
-                "Enter keeps the file. Measured: file 15/15; MCP alone 0/15, later 3/5.",
+                "Enter keeps the file. Measured: file 15/15; MCP alone 4/10, 10/10 since 0.5.1.",
                 [("file", "Instruction file", "one @-line the agent reads every turn"),
                  ("mcp", "MCP server", "in its tool list, deferred by default on Claude Code")],
                 multi=True, cursor=0, stdin=inp, out=out, keyboard=keyboard))
@@ -619,8 +619,8 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
             if "mcp" in via:
                 _write_mcp(chosen, cmd, out, scope_root)
                 if via == ("mcp",) and "claude" in chosen:
-                    report("note", "measured on Claude Code: MCP alone searched 0/15 at default "
-                                   "settings in 2026-09, 3/5 on a later version;", out)
+                    report("note", "measured on Claude Code: MCP alone searched 4/10 at default "
+                                   "settings, 10/10 once the server sent instructions;", out)
                     report("", "every time with ENABLE_TOOL_SEARCH=false, or with the "
                                "instruction file as well", out)
             print("\nStart a new agent session for it to take effect.\n", file=out)
