@@ -23,7 +23,7 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -64,7 +64,7 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -143,7 +143,7 @@ jobs:
       contents: read
       id-token: write          # provenance, so the tarball is traceable to this run
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       # Node 24 because trusted publishing needs npm 11.5.1 and Node 22.14; the 22
       # line in the tool cache ships npm 10 and would fall back to asking for a token.
       - uses: actions/setup-node@v5
