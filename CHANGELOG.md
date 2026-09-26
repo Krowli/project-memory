@@ -6,6 +6,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-26
+
 ### Added
 
 - **`lore mcp` tells the agent when to use it.** The `initialize` reply now carries
@@ -793,7 +795,8 @@ they found, all of it now covered by a test that fails when the fix is removed:
 - Claude Code plugin and marketplace manifests.
 - Test suite covering search, writing, frontmatter tolerance and manifests.
 
-[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Krowli/project-memory/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Krowli/project-memory/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Krowli/project-memory/compare/v0.4.1...v0.5.0
 [0.3.4]: https://github.com/Krowli/project-memory/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/Krowli/project-memory/compare/v0.3.2...v0.3.3
