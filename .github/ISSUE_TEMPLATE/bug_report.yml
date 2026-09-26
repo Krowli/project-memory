@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in lore behaves differently from what the docs say.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Security issues go through a private advisory instead:
+        https://github.com/Krowli/project-memory/security/advisories/new
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran, what it printed, and what you expected instead.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence of commands that shows it.
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: lore --version
+      description: Paste the output. It names the install directory, which matters when two installs are on PATH.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: lore doctor
+      description: Paste the output (remove anything private).
+      render: text
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installed with
+      options: [pipx, pip, uv, npm, from source, other]
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and Python version
+      placeholder: macOS 15, Python 3.13
+  - type: input
+    id: agent
+    attributes:
+      label: Agent, if relevant
+      placeholder: Claude Code 2.1.x, Codex CLI, Cursor, Gemini CLI

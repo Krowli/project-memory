@@ -13,7 +13,8 @@ requires-python = ">=3.9"
 authors = [{ name = "Yehven Shcherbynskyi", email = "lionmause999@gmail.com" }]
 keywords = [
   "memory", "retrieval", "bm25", "knowledge-base", "context",
-  "agents", "llm", "claude-code", "codex",
+  "agents", "llm", "claude-code", "codex", "mcp", "cursor", "gemini",
+  "markdown", "ai-agents", "agent-memory", "sqlite", "fts5",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -22,6 +23,12 @@ classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Documentation",
   "Topic :: Text Processing :: Indexing",
 ]
@@ -32,6 +39,7 @@ dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.urls]
 Homepage = "https://github.com/Krowli/project-memory"
+Documentation = "https://github.com/Krowli/project-memory/tree/main/docs"
 Repository = "https://github.com/Krowli/project-memory"
 Changelog = "https://github.com/Krowli/project-memory/blob/main/CHANGELOG.md"
 Issues = "https://github.com/Krowli/project-memory/issues"

@@ -121,6 +121,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `mcp.md`, `cli.md`, `configuration.md` (every environment variable read),
   `troubleshooting.md` (every `lore doctor` line), `faq.md` and `measurements.md`.
   Client configuration is checked against each client's documentation and linked.
+- **Repository hygiene.** `CONTRIBUTING.md` (the README's contributing section and
+  layout), `SECURITY.md` (private advisories), `CODE_OF_CONDUCT.md`, issue and
+  pull request templates, Dependabot for Actions and pip, a social preview image,
+  and package metadata: more keywords on PyPI and npm, a classifier per supported
+  Python version, and a `Documentation` link.
 
 ### Fixed
 

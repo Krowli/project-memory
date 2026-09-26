@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a change. Proposals land with a number from evals/ or a failing test.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What goes wrong today, for whom, and how often.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: The proposal
+      description: What should change.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: A measurement from evals/, a failing test, or how you would measure it. See CONTRIBUTING.md.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
