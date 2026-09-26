@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -37,7 +36,16 @@ from pathlib import Path
 
 from . import __version__, instructions
 from .cli import add_version
-from .init import AGENTS, _project_root, _read_json, codex_registered, registered_in_json
+from .init import (
+    PROJECT_FILES,
+    PROJECT_READERS,
+    _project_root,
+    _read_json,
+    agent_files,
+    codex_home,
+    codex_registered,
+    registered_in_json,
+)
 from .lib import find_store, page_paths
 
 LEGACY_SKILL = Path.home() / ".agents" / "skills" / "project-memory"
@@ -55,6 +63,8 @@ def _mcp_registrations(root: Path | None) -> dict[str, tuple[Path, str | None]]:
         "claude": ([root / ".mcp.json"] if root else []) + [home / ".claude.json"],
         "gemini": ([root / ".gemini" / "settings.json"] if root else [])
                   + [home / ".gemini" / "settings.json"],
+        "cursor": ([root / ".cursor" / "mcp.json"] if root else [])
+                  + [home / ".cursor" / "mcp.json"],
     }
     found: dict[str, tuple[Path, str | None]] = {}
     for key, candidates in files.items():
@@ -63,10 +73,10 @@ def _mcp_registrations(root: Path | None) -> dict[str, tuple[Path, str | None]]:
             if entry is not None:
                 found[key] = (path, entry.get("command") or None)
                 break
-    codex_home = Path(os.environ.get("CODEX_HOME") or home / ".codex")
-    command = codex_registered(codex_home / "config.toml")
+    config = codex_home() / "config.toml"
+    command = codex_registered(config)
     if command is not None:
-        found["codex"] = (codex_home / "config.toml", command or None)
+        found["codex"] = (config, command or None)
     return found
 
 
@@ -135,6 +145,32 @@ def _same_install(command: str, here: str) -> tuple[bool, str]:
     return True, f"{command} (this install: {here})"
 
 
+def _block_finding(check: str, label: str, text: str, kind: str) -> dict:
+    """What one instruction file that carries our block says: current, stale, or
+    pointing at nothing. The same test at both scopes."""
+    if instructions.MARK_LEGACY in text:
+        return {"check": check, "ok": False,
+                "detail": f"{label}: carries a pre-0.4.0 block — run `lore init` to replace it"}
+    if kind == "paste":
+        stamped = re.search(r"pagelore (\d+\.\d+\.\d+)", text)
+        version = stamped.group(1) if stamped else None
+        fresh = version == __version__
+        return {"check": check, "ok": fresh,
+                "detail": f"{label}: pasted copy of {version or 'an unknown version'}"
+                          + ("" if fresh else f" — STALE, this install is {__version__};"
+                                              " run `lore init` again")}
+    pointed = re.search(r"^@(\S+)", text[text.find(instructions.MARK_BEGIN):], re.M)
+    target_ok = bool(pointed) and Path(pointed.group(1)).is_file()
+    return {"check": check, "ok": target_ok,
+            "detail": f"{label}: includes {pointed.group(1) if pointed else '?'}"
+                      + ("" if target_ok else " — that file is MISSING, the agent"
+                                              " silently loads nothing; run `lore init`")}
+
+
+def _has_block(text: str) -> bool:
+    return instructions.MARK_BEGIN in text or instructions.MARK_LEGACY in text
+
+
 def findings() -> list[dict]:
     out: list[dict] = []
     block = instructions.block_path()
@@ -143,42 +179,47 @@ def findings() -> list[dict]:
                 else f"{block} is missing — run `lore init`"})
 
     connected = 0
-    for key, (label, target, kind) in AGENTS.items():
+    agents = agent_files()
+    for key, (label, target, kind) in agents.items():
+        if target is None:
+            out.append({"check": f"agent:{key}", "ok": None,
+                        "detail": f"{label}: global rules live in Customize → Rules, "
+                                  "not a file; not checked"})
+            continue
         if not target.is_file():
             out.append({"check": f"agent:{key}", "ok": None,
                         "detail": f"{label}: no {target}"})
             continue
         text = target.read_text(encoding="utf-8", errors="replace")
-        has = instructions.MARK_BEGIN in text or instructions.MARK_LEGACY in text
-        if not has:
+        if not _has_block(text):
             out.append({"check": f"agent:{key}", "ok": None,
                         "detail": f"{label}: not connected ({target})"})
             continue
         connected += 1
-        if instructions.MARK_LEGACY in text:
-            out.append({"check": f"agent:{key}", "ok": False,
-                        "detail": f"{label}: carries a pre-0.4.0 block — run `lore init` to replace it"})
-        elif kind == "paste":
-            stamped = re.search(r"pagelore (\d+\.\d+\.\d+)", text)
-            version = stamped.group(1) if stamped else None
-            fresh = version == __version__
-            out.append({"check": f"agent:{key}", "ok": fresh,
-                        "detail": f"{label}: pasted copy of {version or 'an unknown version'}"
-                                  + ("" if fresh else f" — STALE, this install is {__version__};"
-                                                      " run `lore init` again")})
-        else:
-            pointed = re.search(r"^@(\S+)", text[text.find(instructions.MARK_BEGIN):], re.M)
-            target_ok = bool(pointed) and Path(pointed.group(1)).is_file()
-            out.append({"check": f"agent:{key}", "ok": target_ok,
-                        "detail": f"{label}: includes {pointed.group(1) if pointed else '?'}"
-                                  + ("" if target_ok else " — that file is MISSING, the agent"
-                                                          " silently loads nothing; run `lore init`")})
+        out.append(_block_finding(f"agent:{key}", label, text, kind))
+
+    # The project's own files, written by `lore init --scope project`. Reported only
+    # when they carry our block: a repository without one is not a fault.
+    root = _project_root()
+    if root is not None:
+        kinds = {name: agents[key][2] for key, name in PROJECT_FILES.items()}
+        for name, kind in kinds.items():
+            target = root / name
+            try:
+                text = target.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if not _has_block(text):
+                continue
+            connected += 1
+            out.append(_block_finding(f"project:{name}", f"{PROJECT_READERS[name]} ({target})",
+                                      text, kind))
 
     # The other route. An agent reached over MCP counts as connected; the fault this
     # detects is a registration the harness cannot start.
-    registered = _mcp_registrations(_project_root())
+    registered = _mcp_registrations(root)
     shake: list[str] | None = None
-    for key, (label, _, _) in AGENTS.items():
+    for key, (label, _, _) in agents.items():
         if key not in registered:
             out.append({"check": f"mcp:{key}", "ok": None,
                         "detail": f"{label}: not registered as an MCP server"})

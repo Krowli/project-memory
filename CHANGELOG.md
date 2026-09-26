@@ -91,6 +91,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`lore uninstall` takes the MCP entry back out** of `.mcp.json` and `settings.json`,
   deletes a `.mcp.json` it emptied, and runs or prints `claude mcp remove` /
   `codex mcp remove` for the files it does not edit by hand.
+- **Cursor.** `lore init --agent cursor` (and a fourth row in the wizard): the MCP
+  route writes `.cursor/mcp.json` in the project or `~/.cursor/mcp.json` globally,
+  with `type: "stdio"` as Cursor's field table requires; the file route writes the
+  project's `AGENTS.md`, which Cursor reads alongside Codex — the wizard row now says
+  so — and globally, where Cursor keeps user rules in Customize → Rules rather than a
+  file, says what to paste. `lore uninstall` takes the entry out of both `mcp.json`
+  files and never deletes them; `lore doctor` reports the registration.
+- **`lore init --json`.** The result — block, scope, agents, route and every change
+  with its path — as one JSON document on stdout; the messages a person reads go to
+  stderr.
 
 ### Changed
 
@@ -102,6 +112,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pipes and CI is unchanged.
 - `evals/mcp_probe.py` is a wrapper over the shipped server, so the acceptance run
   measures what ships.
+- **`lore init` says `unchanged`** for an instruction file or MCP config that
+  already carries exactly what it would write, and leaves the file untouched instead
+  of rewriting it and calling that `updated`.
+
+### Fixed
+
+- **`lore uninstall` and `lore doctor` now see `--scope project`.** In a repository,
+  uninstall strips the managed block from the project's `CLAUDE.md`, `GEMINI.md` and
+  `AGENTS.md` as well as the global files, and doctor checks those blocks — a dangling
+  include or a stale paste — and counts them as connected. Before, a project-scope
+  block survived uninstall and doctor reported nothing connected.
+- **Codex's instruction file follows `CODEX_HOME`.** `init`, `uninstall` and `doctor`
+  used `~/.codex/AGENTS.md` whatever `CODEX_HOME` said, while the MCP code already
+  read `$CODEX_HOME/config.toml`; both now come from one place.
 
 ## [0.4.1] - 2026-09-19
 

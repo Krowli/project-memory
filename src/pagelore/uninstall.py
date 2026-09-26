@@ -13,21 +13,20 @@ than no uninstaller.
 
 The MCP route is taken out the way it went in: our entry is dropped from the JSON
 files this program merged it into — and a `.mcp.json` that is empty afterwards is
-deleted, because this program created it, while Gemini's settings.json is never
-deleted, because it did not — and where the entry went through the harness's own
+deleted, because this program created it, while Gemini's settings.json and
+Cursor's mcp.json are never deleted, because Gemini and Cursor write them too — and where the entry went through the harness's own
 `mcp add`, its `mcp remove` is run when the harness is here and printed when not.
 """
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import sys
 from pathlib import Path
 
 from . import init, instructions
 from .cli import add_version
-from .init import AGENTS, MCP_SERVER
+from .init import MCP_SERVER, PROJECT_FILES, agent_files, codex_home
 
 
 def _remove_mcp(root: Path | None, out) -> bool:
@@ -37,8 +36,9 @@ def _remove_mcp(root: Path | None, out) -> bool:
     did = False
     # The JSON files this program merges into. `.mcp.json` is ours to delete once it
     # is empty — nothing else writes it here — and settings.json never is.
-    json_files = ([root / ".mcp.json", root / ".gemini" / "settings.json"] if root else []) \
-        + [home / ".gemini" / "settings.json"]
+    json_files = ([root / ".mcp.json", root / ".gemini" / "settings.json",
+                   root / ".cursor" / "mcp.json"] if root else []) \
+        + [home / ".gemini" / "settings.json", home / ".cursor" / "mcp.json"]
     for path in json_files:
         if not path.is_file():
             continue
@@ -59,8 +59,7 @@ def _remove_mcp(root: Path | None, out) -> bool:
     if init.registered_in_json(init._read_json(home / ".claude.json") or {}) is not None:
         init._run_or_print(["claude", "mcp", "remove", "--scope", "user", MCP_SERVER], out)
         did = True
-    codex_home = Path(os.environ.get("CODEX_HOME") or home / ".codex")
-    if init.codex_registered(codex_home / "config.toml") is not None:
+    if init.codex_registered(codex_home() / "config.toml") is not None:
         init._run_or_print(["codex", "mcp", "remove", MCP_SERVER], out)
         did = True
     return did
@@ -73,8 +72,15 @@ def main(argv: list[str] | None = None, *, prog: str = "lore uninstall") -> int:
                     help="also remove ~/.project-memory/ (the block, not your pages)")
     args = ap.parse_args(argv)
 
+    root = init._project_root()
+    # Both scopes: the global files, and the project's own when `lore init --scope
+    # project` may have written there. A block left in a project file dangles just
+    # like a global one once the block file is gone.
+    targets = [target for _, target, _ in agent_files().values() if target is not None]
+    if root is not None:
+        targets += [root / name for name in dict.fromkeys(PROJECT_FILES.values())]
     removed = False
-    for _, target, _ in AGENTS.values():
+    for target in dict.fromkeys(targets):
         if not target.is_file():
             continue
         try:
@@ -87,7 +93,7 @@ def main(argv: list[str] | None = None, *, prog: str = "lore uninstall") -> int:
         except OSError as exc:
             print(f"skipped:   {target} ({exc})", file=sys.stderr)
 
-    removed = _remove_mcp(init._project_root(), sys.stdout) or removed
+    removed = _remove_mcp(root, sys.stdout) or removed
 
     home = instructions.home()
     if args.yes and home.is_dir():

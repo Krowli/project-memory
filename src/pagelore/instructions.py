@@ -141,11 +141,15 @@ def replace_block(old: str, block: str) -> tuple[str, str]:
 
     A legacy `install.sh` block is removed first, so an upgrade replaces rather
     than duplicates. Everything the user wrote around the fence is untouched.
+    "unchanged" means the text already carried exactly this block, and the caller
+    need not write at all.
     """
     had_legacy = bool(_LEGACY_RE.search(old))
+    original = old
     old = _LEGACY_RE.sub("", old)
     if _BLOCK_RE.search(old):
-        return _BLOCK_RE.sub(lambda _: block, old), "updated"
+        new = _BLOCK_RE.sub(lambda _: block, old)
+        return new, ("unchanged" if new == original else "updated")
     prefix = "" if (not old or old.endswith("\n")) else "\n"
     return old + prefix + ("\n" if old.strip() else "") + block, ("updated" if had_legacy else "wrote")
 

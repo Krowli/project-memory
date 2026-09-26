@@ -47,14 +47,8 @@ def machine(tmp_path, monkeypatch):
     monkeypatch.setenv(instructions.HOME_ENV, str(home / ".project-memory"))
     monkeypatch.setenv(instructions.NO_REFRESH_ENV, "1")
     monkeypatch.chdir(project)
-    # AGENTS maps agent name to an absolute path resolved at import time, so it has
-    # to be rebound for a fake home.
-    monkeypatch.setitem(init.AGENTS, "claude",
-                        ("Claude Code", home / ".claude" / "CLAUDE.md", "include"))
-    monkeypatch.setitem(init.AGENTS, "gemini",
-                        ("Gemini CLI", home / ".gemini" / "GEMINI.md", "include"))
-    monkeypatch.setitem(init.AGENTS, "codex",
-                        ("Codex CLI", home / ".codex" / "AGENTS.md", "paste"))
+    # Codex's files follow CODEX_HOME; a developer's own must not leak in.
+    monkeypatch.delenv("CODEX_HOME", raising=False)
     # The MCP route registers a server with `claude mcp add` / `codex mcp add` when
     # that program is on PATH — and on a developer's machine it is. A test that
     # reached that call with the real `which` would edit the real ~/.claude.json.
@@ -74,7 +68,7 @@ def test_the_block_is_written_before_the_line_that_points_at_it(machine):
     """Order, not taste: an `@path` to a missing file produces no error in any
     harness. The agent silently loads nothing, which is the failure this whole
     design exists to avoid."""
-    code, out = run("2\n4\n")
+    code, out = run("2\n5\n")
     assert code == 0
     assert instructions.block_path().is_file()
     assert str(instructions.block_path()) in out
@@ -132,7 +126,7 @@ def test_the_private_store_creates_nothing(machine):
     a directory made here would be both redundant and a surprise inside someone's
     repository."""
     _, project = machine
-    run("2\n4\n1\n")
+    run("2\n5\n1\n")
     assert not (project / ".memory").exists()
 
 
@@ -140,7 +134,7 @@ def test_the_tracked_store_is_marked_before_the_first_write(machine):
     """`.tracked` has to exist before anything writes, or the store gitignores
     itself behind a user who asked for the opposite."""
     _, project = machine
-    run("2\n4\n2\n")
+    run("2\n5\n2\n")
     assert (project / ".memory" / ".tracked").is_file()
     gitignore = project / ".gitignore"
     if gitignore.exists():
@@ -214,8 +208,6 @@ def test_project_scope_outside_a_repository_says_so_instead_of_guessing(tmp_path
     monkeypatch.setenv(instructions.HOME_ENV, str(home / ".project-memory"))
     monkeypatch.setenv(instructions.NO_REFRESH_ENV, "1")
     monkeypatch.chdir(loose)
-    monkeypatch.setitem(init.AGENTS, "claude",
-                        ("Claude Code", home / ".claude" / "CLAUDE.md", "include"))
 
     _, out = run("", argv=["--scope", "project", "--agent", "claude", "--yes"],
                  interactive=False)
@@ -360,7 +352,7 @@ def test_the_store_question_keeps_the_project_path_out_of_its_title(machine):
     """The path was glued to the end of the question with three spaces, which read
     as part of the question. It is the note under it."""
     _, project = machine
-    _, out = run("2\n4\n1\n")
+    _, out = run("2\n5\n1\n")
     assert "memory pages live?\n" in out, "the title does not end its own line"
     assert str(project) in out
 
@@ -527,7 +519,7 @@ def test_doctor_reads_codex_config_toml_without_a_toml_parser(machine, monkeypat
 # --- The fourth question: how the agent reaches it -------------------------------
 #
 # Answers, in order: scope (1 this project, 2 every project), agent (1 Claude,
-# 2 Gemini, 3 Codex, 4 none), via (1 file, 2 MCP, "1 2" both, empty = file),
+# 2 Gemini, 3 Codex, 4 Cursor, 5 none), via (1 file, 2 MCP, "1 2" both, empty = file),
 # confirm, store.
 
 MCP_ADD_CLAUDE = "claude mcp add --transport stdio --scope user project-memory -- lore mcp"
@@ -579,7 +571,7 @@ def test_mcp_json_merge_keeps_what_was_there_and_is_idempotent(machine):
     before = target.read_bytes()
     _, out = run("1\n1\n2\ny\n1\n")
     assert target.read_bytes() == before, "a second run changed the file"
-    assert "  updated   " in out
+    assert "  unchanged " in out
 
 
 def test_mcp_json_that_is_not_json_is_left_alone(machine):
@@ -705,7 +697,7 @@ def test_the_preview_names_the_mcp_target_and_the_command(machine):
 
 
 def test_the_manual_text_names_the_mcp_commands(machine):
-    _, out = run("2\n4\n")
+    _, out = run("2\n5\n")
     assert "claude mcp add" in out
     assert "gemini mcp add" in out
     assert "codex mcp add" in out
@@ -841,3 +833,158 @@ def test_the_fourth_question_is_asked_with_arrows_on_a_real_terminal(tmp_path):
     assert "nothing written" in text, f"the preview was not declined\n{text[-600:]}"
     assert not (project / ".mcp.json").exists()
     assert not (project / "CLAUDE.md").exists()
+
+
+# --- Project scope is taken back out and checked, like the global files ------------
+
+def test_uninstall_strips_the_block_from_every_project_file(machine):
+    """`--scope project` writes into the repository; uninstall that only looked at
+    the home files left those blocks behind, dangling once the block file went."""
+    _, project = machine
+    (project / "CLAUDE.md").write_text("# Team rules\n", encoding="utf-8")
+    run("", argv=["--scope", "project", "--agent", "claude", "--agent", "gemini",
+                  "--agent", "codex", "--yes"], interactive=False)
+    for name in ("CLAUDE.md", "GEMINI.md", "AGENTS.md"):
+        assert instructions.MARK_BEGIN in (project / name).read_text(encoding="utf-8")
+
+    assert uninstall.main([]) == 0
+    assert (project / "CLAUDE.md").read_text(encoding="utf-8") == "# Team rules\n"
+    for name in ("GEMINI.md", "AGENTS.md"):
+        assert instructions.MARK_BEGIN not in (project / name).read_text(encoding="utf-8")
+
+
+def test_doctor_counts_and_checks_a_project_scope_block(machine):
+    _, project = machine
+    run("", argv=["--scope", "project", "--agent", "claude", "--agent", "codex", "--yes"],
+        interactive=False)
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["project:CLAUDE.md"]["ok"] is True
+    assert rows["project:AGENTS.md"]["ok"] is True
+    assert "Codex and Cursor" in rows["project:AGENTS.md"]["detail"]
+    assert rows["connected"]["ok"] is True
+    assert "project:GEMINI.md" not in rows, "a project file without our block is not a finding"
+
+    instructions.block_path().unlink()
+    text = (project / "AGENTS.md").read_text(encoding="utf-8")
+    (project / "AGENTS.md").write_text(text.replace(f"pagelore {init.__version__}",
+                                                    "pagelore 0.0.1"), encoding="utf-8")
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["project:CLAUDE.md"]["ok"] is False
+    assert "MISSING" in rows["project:CLAUDE.md"]["detail"]
+    assert rows["project:AGENTS.md"]["ok"] is False
+    assert "STALE" in rows["project:AGENTS.md"]["detail"]
+
+
+# --- CODEX_HOME moves the instruction file with the config ------------------------
+
+def test_codex_home_moves_the_instruction_file_too(machine, monkeypatch, tmp_path):
+    home, _ = machine
+    elsewhere = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(elsewhere))
+    run("", argv=["--agent", "codex", "--yes"], interactive=False)
+    assert instructions.MARK_BEGIN in (elsewhere / "AGENTS.md").read_text(encoding="utf-8")
+    assert not (home / ".codex" / "AGENTS.md").exists()
+
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["agent:codex"]["ok"] is True
+    assert str(elsewhere) in str(init.target_for("codex", None)[1])
+
+    assert uninstall.main([]) == 0
+    assert instructions.MARK_BEGIN not in (elsewhere / "AGENTS.md").read_text(encoding="utf-8")
+
+
+# --- Cursor --------------------------------------------------------------------------
+
+def test_cursor_mcp_in_this_project_writes_cursor_mcp_json(machine):
+    _, project = machine
+    run("", argv=["--scope", "project", "--agent", "cursor", "--via", "mcp", "--yes"],
+        interactive=False)
+    entry = mcp_json(project / ".cursor" / "mcp.json")["mcpServers"]["project-memory"]
+    assert entry == {"type": "stdio", "command": "lore", "args": ["mcp"]}
+
+
+def test_cursor_mcp_globally_writes_the_home_file(machine):
+    home, _ = machine
+    run("", argv=["--agent", "cursor", "--via", "mcp", "--yes"], interactive=False)
+    assert "project-memory" in mcp_json(home / ".cursor" / "mcp.json")["mcpServers"]
+
+
+def test_uninstall_takes_cursor_out_and_keeps_its_file(machine):
+    home, project = machine
+    (project / ".cursor").mkdir()
+    (project / ".cursor" / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"other": {"command": "x"}}}), encoding="utf-8")
+    run("", argv=["--scope", "project", "--agent", "cursor", "--via", "mcp", "--yes"],
+        interactive=False)
+    run("", argv=["--agent", "cursor", "--via", "mcp", "--yes"], interactive=False)
+    assert uninstall.main([]) == 0
+    assert mcp_json(project / ".cursor" / "mcp.json") == {"mcpServers": {"other": {"command": "x"}}}
+    assert mcp_json(home / ".cursor" / "mcp.json") == {}
+
+
+def test_doctor_reads_a_cursor_registration(machine, monkeypatch):
+    run("", argv=["--scope", "project", "--agent", "cursor", "--via", "mcp", "--yes"],
+        interactive=False)
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: sys.executable)
+    monkeypatch.setattr(doctor, "_handshake", lambda argv: (True, ""))
+    rows = {row["check"]: row for row in doctor.findings()}
+    assert rows["mcp:cursor"]["ok"] is True
+    assert ".cursor" in rows["mcp:cursor"]["detail"]
+
+
+def test_cursor_file_route_uses_the_project_agents_md(machine):
+    """Cursor reads a project's AGENTS.md, the same file Codex reads — written once."""
+    _, project = machine
+    _, out = run("", argv=["--scope", "project", "--agent", "codex", "--agent", "cursor",
+                           "--yes"], interactive=False)
+    text = (project / "AGENTS.md").read_text(encoding="utf-8")
+    assert text.count(instructions.MARK_BEGIN) == 1
+    assert out.count("AGENTS.md") == 1
+
+
+def test_cursor_globally_has_no_file_and_says_where_to_paste(machine):
+    home, _ = machine
+    _, out = run("", argv=["--agent", "cursor", "--yes"], interactive=False)
+    assert "Customize → Rules" in out
+    assert not (home / ".cursor").exists()
+
+
+def test_the_project_agents_md_row_names_both_readers(machine):
+    _, out = run("1\n5\n")
+    assert "read by Codex and Cursor" in out
+    assert "Cursor" in out
+
+
+# --- Idempotence and --json ----------------------------------------------------------
+
+def test_a_second_identical_run_reports_unchanged_and_writes_nothing(machine):
+    home, _ = machine
+    target = home / ".claude" / "CLAUDE.md"
+    run("", argv=["--agent", "claude", "--yes"], interactive=False)
+    stamp = target.stat().st_mtime_ns
+    os.utime(target, ns=(stamp - 10**9, stamp - 10**9))
+    _, out = run("", argv=["--agent", "claude", "--yes"], interactive=False)
+    assert "  unchanged " in out
+    assert target.stat().st_mtime_ns == stamp - 10**9, "an unchanged file was rewritten"
+
+
+def test_json_puts_one_document_on_stdout_and_the_messages_on_stderr(machine, capsys):
+    _, project = machine
+    out = io.StringIO()
+    code = init.main(["--agent", "claude", "--via", "file", "--via", "mcp", "--scope",
+                      "project", "--json"], stdin=io.StringIO(""), stdout=out,
+                     interactive=False)
+    assert code == 0
+    doc = json.loads(out.getvalue())
+    assert doc["scope"] == "project" and doc["agents"] == ["claude"]
+    assert doc["via"] == ["file", "mcp"]
+    assert {c["action"] for c in doc["changes"]} >= {"wrote"}
+    paths = {c["path"] for c in doc["changes"]}
+    assert str(project / "CLAUDE.md") in paths and str(project / ".mcp.json") in paths
+    assert "block at" in capsys.readouterr().err
+
+    out = io.StringIO()
+    init.main(["--agent", "claude", "--via", "file", "--via", "mcp", "--scope", "project",
+               "--json"], stdin=io.StringIO(""), stdout=out, interactive=False)
+    assert {c["action"] for c in json.loads(out.getvalue())["changes"]
+            if c["path"]} == {"unchanged"}

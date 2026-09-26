@@ -32,28 +32,54 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from . import instructions, menu
+from . import __version__, instructions, menu
 from .cli import add_version
 from .lib import TRACKED_MARKER
 
+
 # Each agent, the file it reads every turn, and whether it can include by path.
-# Cursor has no file — its rules live in a text box — so it is instructions only.
-AGENTS = {
-    "claude": ("Claude Code", Path.home() / ".claude" / "CLAUDE.md", "include"),
-    "gemini": ("Gemini CLI", Path.home() / ".gemini" / "GEMINI.md", "include"),
-    "codex": ("Codex CLI", Path.home() / ".codex" / "AGENTS.md", "paste"),
-}
-# The same three agents, per project. A project file is read only inside that
+# Cursor reads a project's AGENTS.md but has no global file — its user rules live
+# in Customize → Rules — so at global scope it has no file here, only a paste.
+def codex_home() -> Path:
+    """Where Codex keeps its global files: `$CODEX_HOME`, else `~/.codex`.
+
+    Codex reads its global AGENTS.md and its config.toml from the same directory,
+    so the instruction file and the MCP registration follow one answer.
+    """
+    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+
+
+def agent_files() -> dict[str, tuple[str, Path | None, str]]:
+    """label, global instruction file (None: there is none), include or paste.
+
+    Resolved on every call rather than at import, so `HOME` and `CODEX_HOME` are
+    read when the answer is used — the MCP code has always done it that way.
+    """
+    home = Path.home()
+    return {
+        "claude": ("Claude Code", home / ".claude" / "CLAUDE.md", "include"),
+        "gemini": ("Gemini CLI", home / ".gemini" / "GEMINI.md", "include"),
+        "codex": ("Codex CLI", codex_home() / "AGENTS.md", "paste"),
+        "cursor": ("Cursor", None, "paste"),
+    }
+
+
+# The same agents, per project. A project file is read only inside that
 # repository, so this is the answer for someone who wants the memory in one place
-# and not on every project they open for the rest of the year.
-PROJECT_FILES = {"claude": "CLAUDE.md", "gemini": "GEMINI.md", "codex": "AGENTS.md"}
-ORDER = ("claude", "gemini", "codex")
+# and not on every project they open for the rest of the year. Codex and Cursor
+# both read the project's AGENTS.md.
+PROJECT_FILES = {"claude": "CLAUDE.md", "gemini": "GEMINI.md", "codex": "AGENTS.md",
+                 "cursor": "AGENTS.md"}
+PROJECT_READERS = {"CLAUDE.md": "Claude Code", "GEMINI.md": "Gemini CLI",
+                   "AGENTS.md": "Codex and Cursor"}
+ORDER = ("claude", "gemini", "codex", "cursor")
 STORE_MODES = ("gitignored", "tracked", "home")
 SCOPES = ("global", "project")
 # How the agent reaches the memory: the instruction file, an MCP server, or both.
@@ -62,14 +88,15 @@ VIA = ("file", "mcp")
 MCP_SERVER = "project-memory"
 
 
-def target_for(key: str, root: Path | None) -> tuple[str, Path, str]:
+def target_for(key: str, root: Path | None) -> tuple[str, Path | None, str]:
     """The label, file and mechanism for one agent at the chosen scope.
 
     `root` is the project when the answer was "this project only" and None when it
-    was "every project". Codex still gets the text pasted rather than an import,
-    because it documents no import syntax at either scope.
+    was "every project". Codex and Cursor still get the text pasted rather than an
+    import, because neither documents an import syntax. The file is None only for
+    Cursor at global scope, where its rules are a text box rather than a file.
     """
-    label, target, kind = AGENTS[key]
+    label, target, kind = agent_files()[key]
     if root is not None:
         target = root / PROJECT_FILES[key]
     return label, target, kind
@@ -85,6 +112,17 @@ def short(path) -> str:
     text = str(path)
     home = str(Path.home())
     return "~" + text[len(home):] if text.startswith((home + "/", home + "\\")) else text
+
+
+def _where(key: str, root: Path | None) -> str:
+    """The file a wizard row names — and, for a project's AGENTS.md, who reads it,
+    because choosing Codex there connects Cursor too and the row should say so."""
+    target = target_for(key, root)[1]
+    if target is None:
+        return "no global file: rules are pasted into Customize → Rules"
+    if root is not None:
+        return f"{short(target)}  (read by {PROJECT_READERS[target.name]})"
+    return short(target)
 
 
 def _project_root() -> Path | None:
@@ -106,17 +144,19 @@ To connect an agent yourself, one line, once:
 
       @{block}
 
-  Codex CLI       paste that file's contents into ~/.codex/AGENTS.md
+  Codex CLI       paste that file's contents into {short(codex_home() / "AGENTS.md")}
   Cursor          paste them into Customize → Rules
 
 Per project instead of per machine: put the same line in the project's own
-CLAUDE.md or AGENTS.md. Only one agent: put it in that agent's definition.
+CLAUDE.md or GEMINI.md, or the contents in its AGENTS.md (read by Codex and
+Cursor). Only one agent: put it in that agent's definition.
 
 Or as an MCP server, in the agent's own tool list, instead of or as well as the file:
 
   Claude Code     {mcp_manual_command("claude", None, cmd)}
   Gemini CLI      {mcp_manual_command("gemini", None, cmd)}
   Codex CLI       {mcp_manual_command("codex", None, cmd)}
+  Cursor          {mcp_manual_command("cursor", None, cmd)}
 
 Or without questions:
   {cmd} init --agent claude --agent codex --yes
@@ -125,29 +165,69 @@ Or without questions:
 """, file=out)
 
 
-def report(label: str, value: str, out) -> None:
+class Recorder:
+    """A text stream that also keeps what `report` said, for `lore init --json`.
+
+    The human lines still go to the stream it wraps (stderr under `--json`), and
+    the same lines come back as records, so the JSON cannot say something the
+    screen did not.
+    """
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.records: list[dict] = []
+
+    def write(self, text: str) -> int:
+        return self.stream.write(text)
+
+    def flush(self) -> None:
+        self.stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+def report(label: str, value: str, out, path: Path | None = None) -> None:
     """One line of what was done: `  updated   ~/.claude/CLAUDE.md`.
 
     Every report line goes through here so that they share one label column and
     one indent, and read as a block rather than as stray prints between menus.
     """
     print(f"  {label:<9} {value}", file=out)
+    records = getattr(out, "records", None)
+    if records is None:
+        return
+    if not label and records:
+        records[-1]["detail"] += " " + value
+        return
+    records.append({"action": label, "detail": value,
+                    "path": str(path) if path is not None else None})
 
 
 def _write_agents(chosen: list[str], cmd: str, out, root: Path | None = None) -> None:
     block_file = instructions.block_path()
+    done: set[Path] = set()
     for key in chosen:
-        _, target, kind = target_for(key, root)
+        label, target, kind = target_for(key, root)
+        if target is None:
+            # Cursor, globally: its user rules are a text box, not a file.
+            report("paste", f"{label} has no global rules file: paste {short(block_file)} "
+                            "into Customize → Rules", out, block_file)
+            continue
+        if target in done:
+            continue            # Codex and Cursor share a project's AGENTS.md
+        done.add(target)
         body = f"@{block_file}" if kind == "include" else instructions.render(cmd).strip()
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             old = target.read_text(encoding="utf-8") if target.exists() else ""
             new, action = instructions.replace_block(old, instructions.fenced(body))
-            target.write_text(new, encoding="utf-8")
-            report(action, short(target), out)
+            if action != "unchanged":
+                target.write_text(new, encoding="utf-8")
+            report(action, short(target), out, target)
         except OSError as exc:
             # One unwritable target must not abandon the others.
-            report("skipped", f"{short(target)} ({exc})", out)
+            report("skipped", f"{short(target)} ({exc})", out, target)
 
 
 def _preview(chosen: list[str], cmd: str, out, root: Path | None = None,
@@ -157,11 +237,15 @@ def _preview(chosen: list[str], cmd: str, out, root: Path | None = None,
     print("\n  This will change:", file=out)
     for key in chosen:
         if "file" in via:
-            _, target, kind = target_for(key, root)
-            print(f"    {short(target)}", file=out)
-            if kind == "include":
+            label, target, kind = target_for(key, root)
+            if target is None:
+                print(f"    {label}: paste {short(block_file)} into Customize → Rules yourself",
+                      file=out)
+            elif kind == "include":
+                print(f"    {short(target)}", file=out)
                 print(f"      + @{block_file}", file=out)
             else:
+                print(f"    {short(target)}", file=out)
                 print(f"      + the contents of {block_file} ({lines} lines)", file=out)
         if "mcp" in via:
             _, path, argv = mcp_target(key, root, cmd)
@@ -193,11 +277,12 @@ def _preview(chosen: list[str], cmd: str, out, root: Path | None = None,
 def mcp_entry(key: str, cmd: str) -> dict:
     """The server entry in that harness's own shape.
 
-    Claude Code documents `type: "stdio"`; Gemini's schema has no `type` for stdio
+    Claude Code documents `type: "stdio"`, and Cursor's field table marks `type`
+    required with `"stdio"` as the value; Gemini's schema has no `type` for stdio
     servers at all, so the field is left out rather than sent for it to reject.
     """
     entry = {"command": cmd, "args": ["mcp"]}
-    return {"type": "stdio", **entry} if key == "claude" else entry
+    return {"type": "stdio", **entry} if key in ("claude", "cursor") else entry
 
 
 def mcp_target(key: str, root: Path | None, cmd: str) -> tuple[str, Path | None, list[str] | None]:
@@ -205,15 +290,15 @@ def mcp_target(key: str, root: Path | None, cmd: str) -> tuple[str, Path | None,
     last two is set. `root` is the project for "this project only" and None for
     "every project". Codex keeps MCP servers in ~/.codex/config.toml and nowhere
     else, so for it the scope is ignored and the preview says so."""
-    label = AGENTS[key][0]
+    label = agent_files()[key][0]
     if key == "claude":
         if root is not None:
             return label, root / ".mcp.json", None
         return label, None, ["claude", "mcp", "add", "--transport", "stdio", "--scope", "user",
                              MCP_SERVER, "--", cmd, "mcp"]
-    if key == "gemini":
+    if key in ("gemini", "cursor"):
         base = root if root is not None else Path.home()
-        return label, base / ".gemini" / "settings.json", None
+        return label, base / f".{key}" / ("settings.json" if key == "gemini" else "mcp.json"), None
     return label, None, ["codex", "mcp", "add", MCP_SERVER, "--", cmd, "mcp"]
 
 
@@ -225,6 +310,11 @@ def mcp_manual_command(key: str, root: Path | None, cmd: str) -> str:
         return f"claude mcp add --transport stdio --scope {scope} {MCP_SERVER} -- {cmd} mcp"
     if key == "gemini":
         return f"gemini mcp add --scope {scope} {MCP_SERVER} {cmd} mcp"
+    if key == "cursor":
+        # Cursor documents the file and no command that edits it.
+        path = short((root if root is not None else Path.home()) / ".cursor" / "mcp.json")
+        entry = json.dumps({MCP_SERVER: mcp_entry(key, cmd)})
+        return f'add under "mcpServers" in {path}: {entry}'
     return f"codex mcp add {MCP_SERVER} -- {cmd} mcp"
 
 
@@ -250,14 +340,16 @@ def _read_json(path: Path):
 def merge_json_server(path: Path, entry: dict) -> str | None:
     """Fold our server into a JSON config, keeping everything else.
 
-    Returns "wrote" when the file did not exist and "updated" when it did — even if
-    the entry was already identical, because the person asked and the answer is
-    what is there now — or None when the file is not plain JSON. Then nothing is
+    Returns "wrote" when the file did not exist, "unchanged" when our entry was
+    already there exactly as it would be written — then the file is not touched —
+    "updated" otherwise, or None when the file is not plain JSON. Then nothing is
     written: a config someone keeps with comments in it is theirs to edit.
     """
     doc = _read_json(path)
     if doc is None:
         return None
+    if path.exists() and registered_in_json(doc) == entry:
+        return "unchanged"
     action = "updated" if path.exists() else "wrote"
     doc.setdefault("mcpServers", {})[MCP_SERVER] = entry
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -361,10 +453,10 @@ def _write_mcp(chosen: list[str], cmd: str, out, root: Path | None) -> None:
             continue
         action = merge_json_server(path, mcp_entry(key, cmd))
         if action is None:
-            report("skipped", f"{short(path)} is not plain JSON; left alone", out)
+            report("skipped", f"{short(path)} is not plain JSON; left alone", out, path)
             report("run", mcp_manual_command(key, root, cmd), out)
         else:
-            report(action, short(path), out)
+            report(action, short(path), out, path)
     if "claude" in chosen and root is not None:
         report("note", "Claude Code asks once to approve the project's .mcp.json; "
                        "run /mcp in a session to do it", out)
@@ -423,7 +515,7 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
          stdin=None, stdout=None, interactive: bool | None = None) -> int:
     ap = argparse.ArgumentParser(prog=prog, description="Connect an agent to the memory.")
     add_version(ap)
-    ap.add_argument("--agent", action="append", default=[], choices=sorted(AGENTS),
+    ap.add_argument("--agent", action="append", default=[], choices=ORDER,
                     help="connect this agent; repeatable; implies --yes")
     ap.add_argument("--scope", choices=SCOPES, default=None,
                     help="global: every project on this machine (default). "
@@ -437,9 +529,14 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
     ap.add_argument("--yes", action="store_true", help="take the answers as given, ask nothing")
     ap.add_argument("--print", dest="show", action="store_true",
                     help="print the line to add and exit")
+    ap.add_argument("--json", action="store_true",
+                    help="print the result as JSON on stdout; the human messages go to stderr")
     args = ap.parse_args(argv)
 
-    out = stdout or sys.stdout
+    stream = stdout or sys.stdout
+    # Under --json stdout carries one document and nothing else, so a script can
+    # parse it; everything a person reads moves to stderr and is recorded as well.
+    out = Recorder(sys.stderr) if args.json else stream
     inp = stdin or sys.stdin
     cmd = args.command or prog.split()[0]
 
@@ -447,9 +544,12 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
     # offered. A wrong include path is the one failure that produces no error.
     block_file = instructions.install(cmd)
     print(f"{prog}  ·  block at {short(block_file)}\n", file=out)
+    result = {"version": __version__, "block": str(block_file), "line": f"@{block_file}"}
 
     if args.show:
         print(f"@{block_file}", file=out)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2), file=stream)
         return 0
 
     if interactive is None:
@@ -488,7 +588,7 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
         chosen = menu.ask(
             "Which agents should use it?",
             f"The line goes into that agent's own instruction file, {where}.",
-            [(key, target_for(key, scope_root)[0], short(target_for(key, scope_root)[1]))
+            [(key, target_for(key, scope_root)[0], _where(key, scope_root))
              for key in ORDER] + [("", "none", "show me what to add and I will do it myself")],
             multi=True, cursor=0, stdin=inp, out=out, keyboard=keyboard)
         chosen = [key for key in chosen if key]
@@ -547,4 +647,10 @@ def main(argv: list[str] | None = None, *, prog: str = "lore init",
         print("\nNo terminal to confirm on, so nothing else was changed.", file=out)
 
     print(f"\nTo take it all back out:  {cmd} uninstall", file=out)
+    if args.json:
+        result.update({"scope": "project" if scope_root else "global",
+                       "project": str(scope_root) if scope_root else None,
+                       "agents": chosen, "via": list(via) if chosen else [],
+                       "changes": out.records})
+        print(json.dumps(result, ensure_ascii=False, indent=2), file=stream)
     return 0
