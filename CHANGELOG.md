@@ -19,6 +19,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answering without it, 10/10 with it. `evals/mcp_probe.py --handshake` shows what
   a client receives.
 
+### Fixed
+
+- **Parallel writes to one page lost sections on Windows.** Traced on a Windows
+  runner: the holder's delete of its lock file was refused while another writer
+  was reading the owner's pid out of it, and the release gave up, leaving the lock
+  behind; then the liveness probe reported the exited owner as *alive* (it answered
+  "no such process" with true), so every other writer waited out the sixty-second
+  timeout and wrote unlocked at once. And a writer that tried to create the lock
+  while Windows was still deleting the previous one got "access denied", took it
+  for an unlockable store and wrote unlocked immediately. The release now waits
+  out the momentary read, the probe answers correctly, and a refused create is
+  waited on like an existing lock. The 12-writer test went from 3 failing
+  iterations in 50 to 0 in 100 on Python 3.11 and 3.13.
+
 ## [0.5.0] - 2026-09-26
 
 ### Added

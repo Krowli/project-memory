@@ -3,7 +3,7 @@ slug: concurrent-writes-need-a-lock
 title: "Two agents on one slug silently lost each other's sections"
 kind: bug
 created: 2026-08-17
-updated: 2026-09-19
+updated: 2026-09-26
 sources:
   - src/pagelore/lib.py
   - src/pagelore/write.py
@@ -70,3 +70,51 @@ deleted or replaced the other's — `os.replace` then raised FileNotFoundError o
 that had existed a moment earlier. One process per write is the shipped shape, so this
 never fired in production, but `write_page` is importable and `evals/mcp_probe.py`
 calls it directly. The name now carries the thread id too.
+
+## The Windows loss on 2026-09-26, found by tracing rather than by tuning
+
+The section above raised the timeout from ten seconds to sixty. The test still lost
+sections on windows-latest a week later, so this time the lock was traced on the
+runner — every takeover, failed delete and unlocked write printed to stderr, the
+12-writer test shape run 50 times (CI run 36260115644, Python 3.11: 3 of 50
+iterations lost sections, and 1 of 50 plain pytest runs). Every failing iteration
+had the same chain:
+
+1. The holder closed its lock and `unlink` raised PermissionError — "being used by
+   another process". A waiter was reading the pid out of the lock in
+   `_owner_is_gone`, and Windows will not delete a file another process has open
+   without FILE_SHARE_DELETE. `__exit__` swallowed that and left the lock behind.
+2. The holder exited, and its lock should have been taken over at once. It was not:
+   `_process_alive` returned *alive* for a process that no longer exists (see
+   [[windows-liveness-probe-kills]]).
+3. So every other writer waited out the full sixty seconds, all timed out within the
+   same 200 ms, and all wrote unlocked together. The escape hatch's re-read checks a
+   writer's own headers, which each of them found, so each returned 0 over a page
+   that had lost someone else's section.
+
+Sixty seconds did not help because the wait was never slow work; it was a lock no
+one would ever release. Fixed at both ends: the release retries a refused delete
+for up to `REPLACE_TIMEOUT_SECONDS` (the reader holds the file for microseconds),
+and the probe answers "no such process" with dead. Neither is a retry of the write
+itself.
+
+That fix still lost one iteration in 50 untraced (run 36261446128, Python 3.13). The
+third hole: while a lock file is being deleted, Windows refuses to create one at the
+same path with "access denied", not "exists". `page_lock` read any error but
+`FileExistsError` as "this store cannot be locked" and wrote unlocked at once — in
+the middle of the write whose release it had just watched begin. It now waits, as
+for an existing lock, unless the directory really is not writable. Traced from
+outside the code this time (a wrapper around `os.open` and `page_lock`): the refusal
+fired 5 times in 200 iterations, and every one of them used to be an unlocked write.
+
+After all three: run 36261633399, 100 iterations of twelve writers on each of Python
+3.11 and 3.13 with no lost section and no unlocked write, and the plain test 50 of 50
+on each.
+
+Still open, and not what failed here: the unlocked escape hatch cannot see a section
+it overwrote that was someone else's, and two waiters that both judge a dead owner
+gone can race on the takeover: the second one deletes whatever lock is there by
+then, which may be the first one's new, live lock. On Windows the new holder's open
+handle refuses that delete — the traced run recorded it 51 to 72 times per 50
+iterations, every one refused. POSIX has no such refusal; it has not been seen to
+fire there, but nothing stops it.

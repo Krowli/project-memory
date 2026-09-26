@@ -326,6 +326,46 @@ def atomic_write(path: Path, text: str) -> None:
         raise
 
 
+def _windows_process_alive(pid: int, kernel32, last_error) -> bool | None:
+    """The Windows half of `_process_alive`, with the API handed in so that the
+    decision can be tested on a machine that is not Windows.
+
+    It used to answer the "no such process" error with `True` — alive — which is
+    the one answer that matters here inverted. A lock whose owner had exited and
+    been reaped was then never taken over, every waiter sat out the full timeout
+    and all of them wrote unlocked at once: sections lost, every command exiting 0.
+    It went unnoticed because the test asked about a child whose `Popen` still held
+    a handle, and a process somebody holds a handle to still opens — the exit-code
+    branch answered, correctly, and the error branch never ran.
+    """
+    SYNCHRONIZE = 0x00100000
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    ERROR_ACCESS_DENIED = 5  # exists, and is not ours to open
+    ERROR_INVALID_PARAMETER = 87  # no process with that id
+    STILL_ACTIVE = 259
+    import ctypes
+
+    handle = kernel32.OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        error = last_error()
+        if error == ERROR_INVALID_PARAMETER:
+            return False
+        if error == ERROR_ACCESS_DENIED:
+            return True
+        return None
+    try:
+        # A process that has exited still opens successfully while anyone holds a
+        # handle to it, so the handle alone means nothing. The exit code does — and
+        # 259 is the one value that cannot be distinguished from "running", which is
+        # why it is reserved.
+        code = ctypes.c_ulong()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return None
+        return code.value == STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def _process_alive(pid: int) -> bool | None:
     """Whether that process still exists. None when this platform cannot say.
 
@@ -340,26 +380,11 @@ def _process_alive(pid: int) -> bool | None:
         try:
             import ctypes
 
-            SYNCHRONIZE = 0x00100000
-            ERROR_INVALID_PARAMETER = 87  # no process with that id
-            kernel32 = ctypes.windll.kernel32
-            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-            STILL_ACTIVE = 259
-            handle = kernel32.OpenProcess(
-                SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-            if not handle:
-                return kernel32.GetLastError() == ERROR_INVALID_PARAMETER
-            try:
-                # A process that has exited still opens successfully while anyone
-                # holds a handle to it, so the handle alone means nothing. The
-                # exit code does — and 259 is the one value that cannot be
-                # distinguished from "running", which is why it is reserved.
-                code = ctypes.c_ulong()
-                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
-                    return None
-                return code.value == STILL_ACTIVE
-            finally:
-                kernel32.CloseHandle(handle)
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
+            kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+            return _windows_process_alive(pid, kernel32, ctypes.get_last_error)
         except Exception:
             return None
     try:
@@ -459,17 +484,39 @@ class page_lock:
                     # taking its lock away is what turned a stall into data loss.
                     return self
                 time.sleep(0.02)
+            except PermissionError:
+                # Windows answers "access denied" rather than "exists" while the
+                # lock is being deleted — a release in progress, which is contention,
+                # not a store that cannot be locked. Treating it as the latter sent
+                # the writer on unlocked in the middle of someone else's write.
+                if not os.access(self.lock.parent, os.W_OK) or time.monotonic() > deadline:
+                    return self
+                time.sleep(0.02)
             except OSError:
                 return self  # a store we cannot lock is still a store we can write
 
     def __exit__(self, *exc) -> None:
-        if self.fd is not None:
-            os.close(self.fd)
-            self.fd = None
+        if self.fd is None:
+            return
+        os.close(self.fd)
+        self.fd = None
+        # Windows refuses to delete a file another process has open, and a waiter
+        # reading the owner's pid out of this lock is exactly that. A release that
+        # gave up on the first refusal left the lock behind with a pid in it that
+        # was about to exit — every writer behind it then depended on the liveness
+        # probe to take it over. The read lasts microseconds, so wait it out, the
+        # way `atomic_write` waits out a search holding the page.
+        deadline = time.monotonic() + REPLACE_TIMEOUT_SECONDS
+        while True:
             try:
                 self.lock.unlink()
+                return
+            except PermissionError:
+                if time.monotonic() > deadline:
+                    return
+                time.sleep(0.01)
             except OSError:
-                pass
+                return
 
 
 def log_event(store: Path, event: str, *, create: bool = False, **fields) -> None:

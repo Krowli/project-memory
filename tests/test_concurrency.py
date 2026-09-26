@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import conftest
+import pytest
 
 WRITE = [*conftest.LORE, "write"]
 
@@ -180,6 +181,107 @@ def test_a_dead_process_is_reported_dead_and_a_live_one_alive():
     dead.wait()
     assert memory_lib._process_alive(dead.pid) is False
     assert memory_lib._process_alive(_os.getpid()) is True
+
+
+class _FakeKernel32:
+    """The three calls the Windows probe makes, answering as Windows does for a
+    process that has exited and been reaped: nobody holds a handle, so it does not
+    open, and the error is ERROR_INVALID_PARAMETER."""
+
+    def __init__(self, error):
+        self.error = error
+
+    def OpenProcess(self, access, inherit, pid):
+        return 0
+
+    def GetExitCodeProcess(self, handle, code):
+        raise AssertionError("never reached without a handle")
+
+    def CloseHandle(self, handle):
+        raise AssertionError("never reached without a handle")
+
+
+def test_a_reaped_process_is_dead_on_windows_too():
+    """The probe answered "no such process" with alive. A lock whose owner had
+    exited was then never taken over: on a Windows runner every waiter sat out the
+    sixty-second timeout and all of them wrote unlocked at once, losing sections
+    while every command exited 0. Decided without Windows by handing the probe the
+    answers Windows gives."""
+    from pagelore import lib as memory_lib
+    probe = memory_lib._windows_process_alive
+    assert probe(4242, _FakeKernel32(87), lambda: 87) is False, "no such process"
+    assert probe(4242, _FakeKernel32(5), lambda: 5) is True, "exists, not ours"
+    assert probe(4242, _FakeKernel32(1), lambda: 1) is None, "cannot say"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the real API, on the platform it answers")
+def test_a_reaped_child_is_reported_dead():
+    """The existing liveness test asks about a child whose Popen still holds a
+    handle, which is the one case in which a dead process still opens."""
+    import gc
+
+    from pagelore import lib as memory_lib
+    pid = int(subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"],
+                             capture_output=True, text=True, check=True).stdout)
+    gc.collect()
+    assert memory_lib._process_alive(pid) is False
+
+
+def test_a_release_the_os_refuses_for_a_moment_still_removes_the_lock(tmp_path, monkeypatch):
+    """Windows refuses to delete a file another process has open, and a waiter
+    reading the owner out of the lock is exactly that. The release gave up on the
+    first refusal and left the lock behind; measured on a Windows runner, that is
+    how every lost section began. Simulated: the first few deletes are refused."""
+    from pagelore import lib as memory_lib
+    store = tmp_path / ".memory"
+    memory_lib.ensure_store(store)
+    page = store / "p.md"
+    lock = page.with_name(f".{page.name}.lock")
+
+    real_unlink = Path.unlink
+    refusals = []
+
+    def unlink(self, *args, **kwargs):
+        if self == lock and len(refusals) < 3:
+            refusals.append(self)
+            raise PermissionError(13, "The process cannot access the file because it "
+                                      "is being used by another process")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    with memory_lib.page_lock(page) as held:
+        assert held.held
+    assert len(refusals) == 3
+    assert not lock.exists(), "the lock outlived its release"
+
+
+def test_a_lock_being_deleted_is_waited_for_not_skipped(tmp_path, monkeypatch):
+    """Windows refuses to create a file that is still being deleted, and says
+    "access denied" rather than "exists". The lock took any error but "exists" to
+    mean the store could not be locked at all and wrote unlocked at once — in the
+    middle of the write whose release it had just watched begin. Simulated: the
+    first few creates are refused that way."""
+    import os as _os
+
+    from pagelore import lib as memory_lib
+    store = tmp_path / ".memory"
+    memory_lib.ensure_store(store)
+    page = store / "p.md"
+    lock = page.with_name(f".{page.name}.lock")
+
+    real_open = _os.open
+    refusals = []
+
+    def refusing_open(path, flags, *args):
+        if Path(path) == lock and len(refusals) < 3:
+            refusals.append(path)
+            raise PermissionError(13, "Access is denied")
+        return real_open(path, flags, *args)
+
+    monkeypatch.setattr(memory_lib.os, "open", refusing_open)
+    with memory_lib.page_lock(page) as held:
+        assert held.held, "went on unlocked on a transient refusal"
+    assert len(refusals) == 3
 
 
 def test_an_unlocked_writer_notices_it_was_overwritten_and_writes_again(tmp_path, monkeypatch):

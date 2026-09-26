@@ -3,9 +3,10 @@ slug: windows-liveness-probe-kills
 title: "os.kill(pid, 0) is a liveness probe on POSIX and a kill on Windows"
 kind: bug
 created: 2026-08-18
-updated: 2026-08-18
+updated: 2026-09-26
 sources:
   - src/pagelore/lib.py
+  - tests/test_concurrency.py
 ---
 
 ## Cause
@@ -46,3 +47,18 @@ identity comes from `platform.node()`.
 A test pins `os.kill` to that one guarded probe by reading the source, because the
 behaviour it guards against cannot be reproduced on the machine most of this is
 written on. See [[concurrent-writes-need-a-lock]].
+
+## The replacement probe had its answer inverted
+
+2026-09-26. `test_parallel_writes_to_one_slug_all_survive` failed intermittently on
+windows-latest ("sections lost: [0, 3, 5]"). The Windows branch of `_process_alive`
+answered `OpenProcess` failing with ERROR_INVALID_PARAMETER — no such process — by
+returning `GetLastError() == 87`, which is True: alive. So a lock whose owner had
+exited and been reaped was never taken over. The existing test missed it because it
+asked about a child whose `Popen` still held a handle; a process somebody holds a
+handle to still opens, the exit-code branch answered correctly, and the error branch
+never ran. Now `_windows_process_alive` takes the API as arguments so a test decides
+87 → dead, 5 (access denied) → alive, anything else → unknown on any OS, and it reads
+the error through `WinDLL(use_last_error=True)` rather than a later `GetLastError`
+call that ctypes itself may have clobbered. Full chain in
+[[concurrent-writes-need-a-lock]].
