@@ -1,0 +1,143 @@
+# Installation
+
+pagelore is one program with two names: `lore`, the documented one, and
+`pagelore`, for a machine where something else already owns `lore`. Every message
+names whichever one you ran, and `lore init` writes that name into the block your
+agent reads.
+
+Requires **Python 3.9 or newer** — what a stock macOS ships. The runtime has no
+dependencies outside the standard library.
+
+## From PyPI
+
+```bash
+pipx install pagelore              # recommended: an isolated environment, `lore` on PATH
+pip install --user pagelore        # also works
+uv tool install pagelore           # with uv
+uvx --from pagelore lore search …  # run once without installing
+```
+
+## From npm
+
+```bash
+npm install -g pagelore
+```
+
+The npm package is a shim, not a port: it finds a Python interpreter and hands it
+the Python source vendored into the tarball at pack time. It runs no `pip` and no
+`postinstall` script, so `--ignore-scripts` and a corporate registry mirror both
+work. It tries `python3` then `python` (on Windows `py -3`, `python`, `python3`);
+to pin one, set `PROJECT_MEMORY_PYTHON` — see [configuration](configuration.md).
+If you already have `pipx`, `pipx install pagelore` is the same program and needs
+no Node.
+
+## From source
+
+```bash
+git clone https://github.com/Krowli/project-memory && cd project-memory
+make dev                  # .venv with an editable install, pytest and ruff
+.venv/bin/lore --version
+```
+
+In a clone with nothing installed, `python3 -m pagelore …` works from the
+repository root with `src/` on `sys.path`. See [CONTRIBUTING](../CONTRIBUTING.md).
+
+## Connect an agent, then check
+
+```bash
+lore init
+lore doctor
+```
+
+`lore init` writes the instruction block to `~/.project-memory/AGENT.md` and then
+asks four questions — where it applies, which agents, how they reach it (file or
+MCP), and where this project's pages live. The details, and the flags that answer
+them in a script, are in [connecting agents](agents.md). `lore doctor` checks the
+result; its messages are explained in [troubleshooting](troubleshooting.md).
+
+Installing without connecting anything installs nothing useful: measured, an agent
+with no instruction line and no MCP server never searched. A bare `lore` says so
+in one line, and `lore doctor` calls it a failure.
+
+## Which install is running
+
+```bash
+lore --version        # or: lore version
+```
+
+prints the version, the name it was run as, the Python, and the directory the
+package runs from. If you installed through both pipx and npm you have two `lore`
+on PATH; `lore doctor` fails when the one on PATH is not the one running it.
+
+## Upgrading
+
+```bash
+pipx upgrade pagelore          # or: npm update -g pagelore, uv tool upgrade pagelore
+```
+
+The instruction block is refreshed by the next `lore` command you or your agent
+runs, so there is nothing to re-copy. A **pasted** copy — Codex's `AGENTS.md`, a
+project `AGENTS.md`, Cursor's User Rules — is the exception: run `lore init`
+again, and `lore doctor` reports a stale one.
+
+## Uninstalling
+
+In this order:
+
+```bash
+lore uninstall                 # take the block and the MCP entries back out
+pipx uninstall pagelore        # or: npm uninstall -g pagelore, uv tool uninstall pagelore
+```
+
+`pipx uninstall` cannot run pagelore's code, so it would leave the fenced block
+behind as an `@include` pointing at a file nothing will recreate — and an agent
+that cannot load an `@path` does not error, it just stops searching.
+
+`lore uninstall` removes only what `lore init` wrote:
+
+- the fenced block in `~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md` and
+  `$CODEX_HOME/AGENTS.md` (default `~/.codex/AGENTS.md`), and — inside a git
+  repository — in that project's `CLAUDE.md`, `GEMINI.md` and `AGENTS.md`;
+  everything you wrote around the fence stays;
+- the `project-memory` MCP entry in the project's `.mcp.json` (deleted if it is
+  then empty), `.gemini/settings.json` and `.cursor/mcp.json`, and in
+  `~/.gemini/settings.json` and `~/.cursor/mcp.json` (those files are never
+  deleted);
+- for `~/.claude.json` and Codex's `config.toml` it runs `claude mcp remove
+  --scope user project-memory` / `codex mcp remove project-memory` when that
+  program is on PATH, and prints the command when it is not.
+
+`lore uninstall --yes` also removes `~/.project-memory/` (the block, not your
+pages). **Your pages are never touched**; delete a `.memory/` directory yourself if
+you mean to.
+
+## Upgrading from 0.3.x
+
+0.3.x installed a skill directory and wrote a line pointing into it. That
+directory is gone, so do this once, in this order:
+
+```bash
+sh install.sh --uninstall      # or re-run the curl one-liner; it now only uninstalls
+pipx install pagelore
+lore init
+```
+
+`lore init` also recognises and replaces the old marker, so if you forget the
+first step you get one block rather than two. A plugin or extension install is
+separate:
+
+```
+Claude Code   /plugin uninstall project-memory
+Gemini CLI    gemini extensions uninstall project-memory
+Codex, Cursor, Kimi   remove the directory you pointed them at
+```
+
+`lore doctor` names a leftover `~/.agents/skills/project-memory` directory.
+
+## Platforms
+
+Tested in CI on Ubuntu, macOS and Windows against Python 3.11 and 3.13, and on 3.9
+on Linux and Intel macOS, on both retrieval paths (FTS5 index and the in-process
+ranker). The 3.9 floor is declared once and enforced everywhere it matters:
+`requires-python` stops pip, and the npm shim treats exit 69 from an older
+interpreter as "try the next one".

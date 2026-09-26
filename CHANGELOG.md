@@ -115,6 +115,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`lore init` says `unchanged`** for an instruction file or MCP config that
   already carries exactly what it would write, and leaves the file untouched instead
   of rewriting it and calling that `updated`.
+- **The README is a front page again**, about a hundred lines, and the rest moved
+  into `docs/`: `installation.md`, `agents.md` (every agent, one project, one
+  specific agent — a Claude Code subagent, a Codex profile, environment only),
+  `mcp.md`, `cli.md`, `configuration.md` (every environment variable read),
+  `troubleshooting.md` (every `lore doctor` line), `faq.md` and `measurements.md`.
+  Client configuration is checked against each client's documentation and linked.
 
 ### Fixed
 
